@@ -1,0 +1,35 @@
+{
+  "name": "veroroute-edge",
+  "version": "1.0.0",
+  "description": "VeroRoute Edge: Lightweight, Aerodynamic Serverless AI Gateway & Smart Router for Cloudflare Workers (Inspired by OmniRoute & VeroRoute)",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "veroroute",
+    "veroroute-edge",
+    "omniroute",
+    "cloudflare-workers",
+    "ai-gateway",
+    "llm-router",
+    "openai",
+    "anthropic",
+    "antigravity",
+    "searxng",
+    "fallback"
+  ],
+  "author": "Samuel Santos (samucamg)",
+  "license": "MIT",
+  "dependencies": {
+    "hono": "^4.7.2"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250224.0",
+    "typescript": "^5.7.3",
+    "wrangler": "^3.111.0"
+  }
+}

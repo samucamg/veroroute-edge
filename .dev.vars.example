@@ -1,0 +1,35 @@
+# VeroRoute Edge - Chaves de API e Segredos (.dev.vars)
+# Renomeie para .dev.vars para uso local no `wrangler dev`
+# Para deploy de produção, configure via `wrangler secret put NOME_DA_VARIAVEL`
+
+# Senha mestra de acesso ao VeroRoute Edge (Opcional - deixe vazio para acesso livre)
+AUTH_TOKEN=
+
+# Provedores Oficiais e Corporativos
+OPENAI_API_KEYS=sk-proj-...
+ALIBABA_API_KEYS=sk-...
+ONE_MIN_API_KEYS=
+FREEAPIKEY_KEYS=
+AZURE_OPENAI_API_KEYS=
+BEDROCK_API_KEYS=
+
+# Provedores Gratuitos de Alta Capacidade (Pool com rotação por vírgula)
+GEMINI_API_KEYS=AIzaSy...1,AIzaSy...2
+GROQ_API_KEYS=gsk_...
+CEREBRAS_API_KEYS=csk-...
+SAMBANOVA_API_KEYS=
+MISTRAL_API_KEYS=
+OPENROUTER_API_KEYS=sk-or-...
+DEEPSEEK_API_KEYS=sk-...
+
+# Provedor Antigravity / Google Cloud Code Assist (OAuth & Tokens)
+# Deixe vazio para usar o fluxo OAuth integrado via navegador ou cole aqui seu refresh token:
+ANTIGRAVITY_REFRESH_TOKEN=
+ANTIGRAVITY_PROJECT_ID=
+
+# Provedores de Busca Web (Search & RAG)
+# Coloque a URL da sua própria instância SearXNG (ex: https://meusearxng.com). Deixe vazio para usar DuckDuckGo gratuito:
+SEARXNG_URL=
+TAVILY_API_KEYS=tvly-...
+SERPER_API_KEYS=
+FIRECRAWL_API_KEYS=
