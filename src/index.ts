@@ -7,6 +7,8 @@ import { applyModalityBridge } from "./modality/bridge";
 import { dispatchWithCascade } from "./routing/cascade";
 import { augmentRequestWithWebSearch, dispatchSearch } from "./search/dispatcher";
 import { fetchWithJinaReader } from "./search/jina";
+import { handleGenerateImages, handleEditImages } from "./adapters/images";
+import { handleAudioSpeech, handleAudioTranscriptions, handleAudioTranslations } from "./adapters/audio";
 import {
   exchangeAntigravityCode,
   getAntigravityAuthUrl,
@@ -210,6 +212,15 @@ app.post("/v1/web/fetch", async (c) => {
     return c.json({ error: { message: err.message } }, 500);
   }
 });
+
+// --- OPENAI IMAGES API: POST /v1/images/generations & /v1/images/edits ---
+app.post("/v1/images/generations", handleGenerateImages);
+app.post("/v1/images/edits", handleEditImages);
+
+// --- OPENAI AUDIO API: speech, transcriptions, translations ---
+app.post("/v1/audio/speech", handleAudioSpeech);
+app.post("/v1/audio/transcriptions", handleAudioTranscriptions);
+app.post("/v1/audio/translations", handleAudioTranslations);
 
 // --- FLUXO OAUTH: ANTIGRAVITY CLI / GOOGLE CLOUD CODE ASSIST ---
 app.get("/api/oauth/antigravity/authorize", (c) => {
