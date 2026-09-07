@@ -27,7 +27,7 @@
 
 ## ✨ Overview
 
-**VeroRoute Edge** is an enterprise-grade, edge-native AI gateway and smart router that runs 100% on **Cloudflare Workers (V8 Isolates)**. Inspired by the routing robustness of **OmniRoute** and the token-compression architecture of **VeroRoute**, it delivers sub-15ms proxy latency with zero physical servers.
+**VeroRoute Edge** is an edge-native AI gateway and smart router that runs on **Cloudflare Workers (V8 Isolates)**. Inspired by the routing robustness of **OmniRoute** and the token-compression architecture of **VeroRoute**, it delivers low-latency proxy routing with no dedicated servers.
 
 It features an automatic **resilience cascade** with smart fallbacks (HTTP 429/5xx), global key-pool cooldowns persisted in Cloudflare KV, dual OpenAI + Anthropic specification compatibility, multimodal image transcription for text-only models, and **Search-Augmented Generation (SAG)** with real free-tier search engines (SearXNG, DuckDuckGo HTML, Tavily, Jina Reader).
 
@@ -156,14 +156,14 @@ docker compose up -d
 
 ## ⚙️ Environment Variables & Secrets
 
-> 💡 **All API keys and secrets are 100% optional!**
-> You do **NOT** need to configure every provider. Providing just **one single API key** is enough (or none at all, relying on the built-in **free Cloudflare Workers AI** and **DuckDuckGo HTML search**). The gateway automatically routes and falls back across whichever providers you configure.
+> 💡 **`AUTH_TOKEN` is required; all other API keys are optional.**
+> You do **NOT** need to configure every provider. Providing just **one single API key** is enough (or none at all, relying on the built-in **free Cloudflare Workers AI** and **DuckDuckGo HTML search**). The gateway routes and falls back across whichever providers you configure.
 
 ### 🔒 Secrets & API Keys (`.dev.vars` / Cloudflare Secrets)
 *Set only what you plan to use:*
 | Secret / Key | Required? | Description |
 |---|:---:|---|
-| **`AUTH_TOKEN`** | Optional | Master bearer token to protect your gateway. Leave blank for open access. |
+| **`AUTH_TOKEN`** | **Required** | Master bearer token to authenticate all API and admin requests. The gateway returns 503 if unset. |
 | **`GEMINI_API_KEYS`** | Optional | Google Gemini API keys (comma-separated for pool rotation). |
 | **`GROQ_API_KEYS`** | Optional | Groq Cloud API keys for ultra-fast Llama 3.3. |
 | **`CEREBRAS_API_KEYS`** | Optional | Cerebras Cloud API keys (2,000+ tokens/s). |
@@ -185,7 +185,7 @@ docker compose up -d
 
 ## ✨ Visão Geral
 
-O **VeroRoute Edge** é um gateway de IA serverless e roteador inteligente projetado para operar 100% na borda global da **Cloudflare (V8 Isolates)**. Inspirado no ecossistema e estratégias de roteamento do **OmniRoute** e na economia de tokens do **VeroRoute**, ele oferece proxy de altíssima velocidade (< 15ms) com zero servidores físicos ou containers dedicados.
+O **VeroRoute Edge** é um gateway de IA serverless e roteador inteligente projetado para operar na borda global da **Cloudflare (V8 Isolates)**. Inspirado no ecossistema e estratégias de roteamento do **OmniRoute** e na economia de tokens do **VeroRoute**, ele oferece proxy de baixa latência sem servidores físicos ou containers dedicados.
 
 Conta com uma **cascata de resiliência inteligente** com fallback automático (HTTP 429, 5xx ou timeout), pool de chaves com cooldowns sincronizados via Cloudflare KV, compatibilidade dupla (OpenAI + Anthropic), transcrição automática de imagens para modelos text-only e **Busca Web em Tempo Real (RAG Integrado)** com provedores de free tier real (SearXNG, DuckDuckGo HTML, Tavily, Jina Reader).
 
@@ -326,14 +326,14 @@ O GitHub possui um scanner automatizado que **bloqueia commits contendo segredos
 
 ## ⚙️ Variáveis de Ambiente e Segredos
 
-> 💡 **Todas as chaves de API e segredos são 100% opcionais!**
-> Você **NÃO** precisa preencher todas as chaves de API. Configure apenas **uma única chave** do provedor que desejar (ou nenhuma, utilizando o **Cloudflare Workers AI nativo gratuito** e o **DuckDuckGo** que funcionam sem chave alguma). O gateway direciona e faz fallback automaticamente para os provedores configurados.
+> 💡 **`AUTH_TOKEN` é obrigatório; as demais chaves de API são opcionais.**
+> Você **NÃO** precisa preencher todas as chaves de API. Configure apenas **uma única chave** do provedor que desejar (ou nenhuma, utilizando o **Cloudflare Workers AI nativo gratuito** e o **DuckDuckGo**). O gateway direciona e faz fallback automaticamente.
 
 ### 🔒 Segredos e Chaves (`.dev.vars` / Cloudflare Secrets)
 *Adicione apenas o que você for utilizar:*
 | Chave / Segredo | Obrigatório? | Descrição |
 |---|:---:|---|
-| **`AUTH_TOKEN`** | Opcional | Senha mestra para proteger o seu gateway. Se vazio, o acesso fica público. |
+| **`AUTH_TOKEN`** | **Obrigatório** | Token mestre para autenticar todas as requisições API e admin. O gateway retorna 503 se não configurado. |
 | **`ANTIGRAVITY_CLIENT_SECRET`** | Opcional | Client Secret do Google OAuth (evite commitar no git; use o painel ou secret). |
 | **`ANTIGRAVITY_CLIENT_ID`** | Opcional | Client ID do Google OAuth para o Antigravity CLI. |
 | **`GEMINI_API_KEYS`** | Opcional | Chaves do Google Gemini (AI Studio). Múltiplas chaves separadas por vírgula. |

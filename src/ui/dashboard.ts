@@ -381,6 +381,24 @@ export function renderDashboardHtml(): string {
       background: rgba(255, 255, 255, 0.06);
       border: 1px solid var(--card-border);
     }
+
+
+    /* M-6: Responsive layout for mobile/tablet */
+    @media (max-width: 768px) {
+      header { flex-direction: column; gap: 0.5rem; padding: 0.5rem 0.75rem; }
+      .brand-text h1 { font-size: 0.95rem; }
+      .brand-text .tagline { display: none; }
+      nav { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      nav .nav-btn { font-size: 0.7rem; padding: 0.35rem 0.55rem; white-space: nowrap; }
+      .container { padding: 0.75rem; }
+      .card { padding: 1rem; }
+      .modal-content { width: 95vw; max-height: 90vh; }
+    }
+    @media (max-width: 480px) {
+      .brand-icon { display: none; }
+      nav .nav-btn { font-size: 0.65rem; padding: 0.3rem 0.4rem; }
+    }
+
   </style>
 </head>
 <body>
@@ -1097,17 +1115,19 @@ dsh --model combo-super-payload
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let fullText = '';
+        let sseBuffer = '';
         botDiv.innerText = '';
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          const chunk = decoder.decode(value);
-          const lines = chunk.split('\\n');
-          for (const line of lines) {
+          sseBuffer += decoder.decode(value, { stream: true });
+          const parts = sseBuffer.split('\\n');
+          sseBuffer = parts.pop() || '';
+          for (const line of parts) {
             if (line.startsWith('data: ') && line !== 'data: [DONE]') {
               try {
-                const parsed = JSON.parse(line.replace('data: ', ''));
+                const parsed = JSON.parse(line.slice(6));
                 const delta = parsed.choices?.[0]?.delta?.content || '';
                 fullText += delta;
                 botDiv.innerText = fullText;

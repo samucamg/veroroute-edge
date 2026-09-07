@@ -1,19 +1,19 @@
 # ==============================================================================
 # VeroRoute Edge - Local Environment Variables (.dev.vars)
 # ==============================================================================
-# 💡 NOTA IMPORTANTE:
-# TODAS as chaves de API e segredos são 100% OPCIONAIS!
-# Você NÃO precisa preencher tudo. Basta configurar UMA ÚNICA chave que você
-# possua (ex: só GEMINI_API_KEYS ou só GROQ_API_KEYS).
-# Se não preencher nenhuma, o gateway opera via Cloudflare Workers AI nativo ($0).
+# IMPORTANTE:
+#   AUTH_TOKEN e OBRIGATORIO. O gateway retorna 503 se nao configurado.
+#   As demais chaves de API sao opcionais — configure apenas o que for usar.
+#   Se nao preencher nenhuma chave de provedor, o gateway opera via
+#   Cloudflare Workers AI nativo ($0) e DuckDuckGo HTML ($0).
 # ==============================================================================
 
-# Token mestre para autenticar seus clientes no gateway (Bearer token)
-# Deixe vazio se quiser acesso livre sem autenticação
+# Token mestre OBRIGATORIO para autenticar todas as requisicoes API e admin.
+# Gere um token seguro: openssl rand -hex 32
 AUTH_TOKEN=seu-token-mestre-privado
 
 # --- Provedores LLM (Preencha apenas o que for usar) ---
-# Dica: aceite múltiplas chaves separadas por vírgula para round-robin automático
+# Dica: aceite multiplas chaves separadas por virgula para round-robin automatico
 GEMINI_API_KEYS=
 GROQ_API_KEYS=
 CEREBRAS_API_KEYS=
@@ -22,3 +22,8 @@ OPENAI_API_KEYS=
 # --- Busca Web Paga Opcional ---
 # Deixe vazio para usar DuckDuckGo HTML gratuito ($0 sem chave) ou SearXNG
 TAVILY_API_KEYS=
+
+# --- Antigravity OAuth (Opcional) ---
+# Para integrar com Antigravity CLI via Google OAuth
+# ANTIGRAVITY_CLIENT_ID=
+# ANTIGRAVITY_CLIENT_SECRET=
