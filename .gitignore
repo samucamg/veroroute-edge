@@ -9,3 +9,4 @@ dist/
 
 .wrangler/
 dist2/
+deploy-personal.sh

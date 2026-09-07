@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "veroroute-edge",
-  "account_id": "d205c8c234a751cd22b82e176c19d5e1",
+  // "account_id": "<YOUR_ACCOUNT_ID>",  // Optional: only needed with multiple CF accounts
   "main": "src/index.ts",
   "compatibility_date": "2025-02-24",
   "compatibility_flags": ["nodejs_compat"],
@@ -18,11 +18,11 @@
   "kv_namespaces": [
     {
       "binding": "OMNI_CACHE",
-      "id": "d4bb8a5e98424577a56c05d43f6a6867"
+      "id": "<YOUR_OMNI_CACHE_KV_ID>"
     },
     {
       "binding": "OMNI_KEYS",
-      "id": "cce29d8cacf14a4bb66ed8ef0f0e9042"
+      "id": "<YOUR_OMNI_KEYS_KV_ID>"
     }
   ],
 

@@ -2,16 +2,14 @@
 
 # ⚡ VeroRoute Edge
 
-### Aerodynamic Serverless AI Gateway & Smart Router for Cloudflare Workers with Resilient Cascade, Real Free-Tier Web Search (RAG) & Multimodal Bridge
-### Gateway de IA Serverless Aerodinâmico e Roteador Inteligente para Cloudflare Workers com Cascata de Resiliência, Busca Web Real Gratuita (RAG) e Ponte Multimodal
+### Aerodynamic Serverless AI Gateway & Smart Router for Cloudflare Workers
+### Gateway de IA Serverless Aerodinâmico e Roteador Inteligente para Cloudflare Workers
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/samucamg/veroroute-edge)
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare_Workers-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![Hono](https://img.shields.io/badge/Hono-E36002?style=for-the-badge&logo=hono&logoColor=white)](https://hono.dev/)
-[![Docker Compose](https://img.shields.io/badge/Docker_Compose-SearXNG-2496ED?style=for-the-badge&logo=docker&logoColor=white)](deploy/searxng/docker-compose.yml)
-[![Portainer Stack](https://img.shields.io/badge/Portainer-Stack_Ready-13BEF9?style=for-the-badge&logo=portainer&logoColor=white)](deploy/searxng/portainer-stack.yml)
 [![OpenAI Compatible](https://img.shields.io/badge/OpenAI-compatible-412991?style=for-the-badge&logo=openai&logoColor=white)](#-endpoint-matrix)
 [![Anthropic Compatible](https://img.shields.io/badge/Anthropic-compatible-191919?style=for-the-badge)](#-endpoint-matrix)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
@@ -27,19 +25,26 @@
 
 ## ✨ Overview
 
-**VeroRoute Edge** is an edge-native AI gateway and smart router that runs on **Cloudflare Workers (V8 Isolates)**. Inspired by the routing robustness of **OmniRoute** and the token-compression architecture of **VeroRoute**, it delivers low-latency proxy routing with no dedicated servers.
+**VeroRoute Edge** is an edge-native AI gateway and smart router that runs on **Cloudflare Workers (V8 Isolates)**. Inspired by the routing resilience of **OmniRoute** and the token-economy architecture of **VeroRoute**, it delivers low-latency AI proxy routing with zero dedicated servers.
 
-It features an automatic **resilience cascade** with smart fallbacks (HTTP 429/5xx), global key-pool cooldowns persisted in Cloudflare KV, dual OpenAI + Anthropic specification compatibility, multimodal image transcription for text-only models, and **Search-Augmented Generation (SAG)** with real free-tier search engines (SearXNG, DuckDuckGo HTML, Tavily, Jina Reader).
+**Key capabilities:**
+- 🔄 **Resilient Cascade** — automatic fallback on HTTP 429/5xx with per-key cooldowns persisted in Cloudflare KV
+- 🌐 **Dual API Compatibility** — OpenAI + Anthropic specification support (chat completions, messages, responses)
+- 🖼️ **Multimodal Bridge** — automatic image transcription for text-only models via Gemini/Workers AI
+- 🔍 **Real Free-Tier RAG** — Search-Augmented Generation with SearXNG, DuckDuckGo HTML, Tavily, Jina Reader
+- 🎵 **Audio & Images** — TTS, transcription, image generation via Workers AI (FLUX)
+- 🛡️ **Mandatory Auth** — fail-closed AUTH_TOKEN with virtual API keys and admin dashboard
+- 🧰 **Tool Calling Emulation** — adds function-calling to models that don't support it natively
+
+> **Works out of the box with zero API keys** — Cloudflare Workers AI (free tier: 10,000 neurons/day) and DuckDuckGo HTML search ($0) are built in. Add provider keys only for the models you want.
 
 ```mermaid
 flowchart TD
-    Client([Client: Cursor / Claude Code CLI / Cline / n8n / SDK]) -->|Request with AUTH_TOKEN| Gateway[Cloudflare Worker: VeroRoute Edge]
-    
-    subgraph WebSearchFlow [Intelligent Web Search Bypass & RAG]
+    Client([Client: Cursor / Claude Code / Cline / n8n / SDK]) -->|Request with AUTH_TOKEN| Gateway[Cloudflare Worker: VeroRoute Edge]
+
+    subgraph WebSearchFlow [Intelligent Web Search & RAG]
         Gateway -->|Requires Search or URL?| SearchRoute{Search / Fetch?}
-        SearchRoute -->|Web Search| SearchSlots[1st: SearXNG Self-Hosted
-2nd: DuckDuckGo HTML $0
-Fallback: Tavily Search]
+        SearchRoute -->|Web Search| SearchSlots[1st: SearXNG Self-Hosted\n2nd: DuckDuckGo HTML $0\nFallback: Tavily Search]
         SearchRoute -->|URL Fetch| FetchSlots[Jina Reader r.jina.ai $0]
         SearchSlots -->|Extract Live Facts| Enrich[Inject Context into Prompt]
         FetchSlots -->|Clean Markdown| Enrich
@@ -49,38 +54,27 @@ Fallback: Tavily Search]
     SearchRoute -->|No Search| Compression
 
     subgraph Compression [Token Compression Pipeline]
-        CP[Session Deduplication
-+ ANSI Terminal Log Cleaning
-+ Output Personas]
+        CP[Session Deduplication\n+ ANSI Terminal Log Cleaning\n+ Output Personas]
     end
 
     Compression --> ModelCascade
 
     subgraph ModelCascade [Resilient Routing Cascade]
-        M1[Tier 1: Primary Target
-e.g. Gemini 2.5 Pro / Groq Llama 3.3]
+        M1[Tier 1: Primary Target\ne.g. Gemini 2.5 Pro / Groq Llama 3.3]
         M1 -->|Success| Finish([Response to Client])
-        M1 -->|Fails: 429 / 5xx / Timeout| M2[Tier 2: Fallback 1
-e.g. Cerebras Llama 3.3 / Antigravity]
+        M1 -->|Fails: 429 / 5xx / Timeout| M2[Tier 2: Fallback 1\ne.g. Cerebras Llama 3.3]
         M2 -->|Success| Finish
-        M2 -->|Fails| M3[Tier 3: Fallback 2
-e.g. Cloudflare Workers AI env.AI $0]
+        M2 -->|Fails| M3[Tier 3: Fallback 2\ne.g. Cloudflare Workers AI $0]
         M3 -->|Success| Finish
-        M3 -->|Total Outage| Ext[Tier 4: OpenRouter / Pollinations]
-        Ext -->|Success| Finish
-    end
-
-    subgraph ModalityBridge [Multimodal Bridge]
-        Gateway -.->|If Text-only Model + Image Input| VisionTranscribe[Transcribe Visuals via Gemini Flash]
-        VisionTranscribe -.->|Inject Image Description| Compression
+        M3 -->|Fails| ErrorResp([Error Response with Details])
     end
 ```
 
 ---
 
-## 🚀 One-Click Deploy to Cloudflare Workers
+## 🚀 One-Click Deploy
 
-The fastest way to deploy your own global AI gateway. No local terminal or Wrangler installation required:
+The fastest way to deploy your own global AI gateway. No local terminal required:
 
 <div align="center">
 
@@ -88,11 +82,45 @@ The fastest way to deploy your own global AI gateway. No local terminal or Wrang
 
 </div>
 
-### Automated Setup Flow:
-1. Click the **Deploy to Cloudflare** button above.
-2. Authorize Cloudflare to connect to your GitHub account.
-3. Cloudflare will automatically fork/clone the repository and deploy the Worker globally across 300+ edge locations.
-4. Go to your Worker settings and create the two KV Namespaces (`OMNI_CACHE` and `OMNI_KEYS`).
+### Step-by-Step After Clicking Deploy:
+
+1. **Click** the Deploy button above and authorize Cloudflare to fork the repository.
+2. Cloudflare builds and deploys the Worker globally across **300+ edge locations**.
+3. **Create 2 KV Namespaces** in the Cloudflare dashboard:
+   - Go to **Workers & Pages → KV** → **Create a namespace**
+   - Create `veroroute-edge-OMNI_CACHE` and `veroroute-edge-OMNI_KEYS`
+4. **Bind KV** to your Worker:
+   - Go to **Workers & Pages → veroroute-edge → Settings → Bindings**
+   - Add KV Namespace binding: `OMNI_CACHE` → your cache namespace
+   - Add KV Namespace binding: `OMNI_KEYS` → your keys namespace
+5. **Set your AUTH_TOKEN** (mandatory, the gateway won't work without it):
+   - Go to **Settings → Variables and Secrets → Add**
+   - Name: `AUTH_TOKEN`, Type: **Secret**, Value: a strong password (min 20 chars, uppercase + lowercase + number + special char)
+6. **(Optional)** Add API keys as secrets for the providers you want:
+   - `GEMINI_API_KEYS`, `GROQ_API_KEYS`, `CEREBRAS_API_KEYS`, `OPENAI_API_KEYS`, etc.
+   - Skip this step to use only the free Cloudflare Workers AI models.
+7. **Done!** Access your gateway at `https://veroroute-edge.<your-subdomain>.workers.dev`
+
+### Alternative: CLI Deploy (Wrangler)
+
+```bash
+# Clone
+git clone https://github.com/samucamg/veroroute-edge.git
+cd veroroute-edge
+npm install
+
+# Create KV namespaces
+npx wrangler kv:namespace create OMNI_CACHE
+npx wrangler kv:namespace create OMNI_KEYS
+
+# Paste the returned IDs into wrangler.jsonc
+
+# Set mandatory auth token
+npx wrangler secret put AUTH_TOKEN
+
+# Deploy
+npx wrangler deploy
+```
 
 ---
 
@@ -102,19 +130,19 @@ The fastest way to deploy your own global AI gateway. No local terminal or Wrang
 |---|---|---|---|
 | `GET` | `/` | Gateway | Visual Glassmorphism Dashboard & Playground |
 | `GET` | `/health` | Gateway | Health check, architecture status and engine version |
-| `GET` | `/v1/models` | OpenAI-style | Unified active models catalog, pricing and context lengths |
-| `POST` | `/v1/chat/completions` | OpenAI | Chat completions, vision input, tool calling & SSE streaming with cascade |
-| `POST` | `/v1/responses` | OpenAI | Structured Responses API and reasoning parameters |
-| `POST` | `/v1/messages` | Anthropic | Native Anthropic Messages API (Claude Code CLI, Cline, Cursor, Roo Code) |
+| `GET` | `/v1/models` | OpenAI | Unified active models catalog with pricing and context lengths |
+| `POST` | `/v1/chat/completions` | OpenAI | Chat, vision, tool calling & SSE streaming with cascade |
+| `POST` | `/v1/responses` | OpenAI | Structured Responses API with reasoning support |
+| `POST` | `/v1/messages` | Anthropic | Native Anthropic Messages (Claude Code CLI, Cline, Cursor, Roo Code) |
 | `POST` | `/v1/images/generations` | OpenAI | Image generation via Workers AI (FLUX) with fallback |
 | `POST` | `/v1/images/edits` | OpenAI | Image editing and variation endpoint |
 | `POST` | `/v1/audio/speech` | OpenAI | Multi-engine text-to-speech (Workers AI / OpenAI) |
 | `POST` | `/v1/audio/transcriptions` | OpenAI | Audio transcription via Workers AI Whisper |
 | `POST` | `/v1/audio/translations` | OpenAI | Audio translation to English |
-| `POST` | `/v1/search` | Gateway | Dedicated web search hub (SearXNG ➔ DuckDuckGo ➔ Tavily) |
-| `POST` | `/v1/web/fetch` | Gateway | Dedicated URL scraper via Jina Reader (`r.jina.ai`) to clean Markdown |
+| `POST` | `/v1/search` | Gateway | Dedicated web search hub (SearXNG → DuckDuckGo → Tavily) |
+| `POST` | `/v1/web/fetch` | Gateway | URL-to-Markdown scraper via Jina Reader (`r.jina.ai`) |
 | `GET` | `/api/mcp/sse` | MCP Server | Model Context Protocol SSE transport |
-| `POST` | `/api/mcp/messages` | MCP Server | Model Context Protocol JSON-RPC 2.0 tool execution |
+| `POST` | `/api/mcp/messages` | MCP Server | MCP tool execution via JSON-RPC 2.0 |
 
 ---
 
@@ -140,17 +168,14 @@ docker compose up -d
 ```
 
 ### Option 2: Portainer Stack (Web UI)
-1. In Portainer, go to **Stacks** ➔ **Add stack**.
-2. Name the stack: `searxng-gateway`.
-3. Copy and paste the contents of [`deploy/searxng/portainer-stack.yml`](deploy/searxng/portainer-stack.yml).
+1. In Portainer, go to **Stacks** → **Add stack**.
+2. Name: `searxng-gateway`.
+3. Paste contents of [`deploy/searxng/portainer-stack.yml`](deploy/searxng/portainer-stack.yml).
 4. Click **Deploy the stack**.
-5. In your Cloudflare Worker, set the public environment variable (`wrangler.jsonc` `vars` or Dashboard ➔ Settings ➔ Variables):
+5. Set `SEARXNG_URL` in your Worker:
    ```jsonc
    "SEARXNG_URL": "http://YOUR_SERVER_IP:8080"
    ```
-   *(This is a public open URL variable, not a secret key).*
-
----
 
 ---
 
@@ -163,37 +188,87 @@ docker compose up -d
 *Set only what you plan to use:*
 | Secret / Key | Required? | Description |
 |---|:---:|---|
-| **`AUTH_TOKEN`** | **Required** | Master bearer token to authenticate all API and admin requests. The gateway returns 503 if unset. |
+| **`AUTH_TOKEN`** | **Required** | Master bearer token to authenticate all API and admin requests. The gateway returns 503 if unset. Must be min 20 chars with uppercase, lowercase, number, and special character. |
 | **`GEMINI_API_KEYS`** | Optional | Google Gemini API keys (comma-separated for pool rotation). |
 | **`GROQ_API_KEYS`** | Optional | Groq Cloud API keys for ultra-fast Llama 3.3. |
 | **`CEREBRAS_API_KEYS`** | Optional | Cerebras Cloud API keys (2,000+ tokens/s). |
 | **`OPENAI_API_KEYS`** | Optional | Official OpenAI keys for GPT or audio fallbacks. |
 | **`TAVILY_API_KEYS`** | Optional | Tavily web search API key (1,000 free queries/month). |
 
-### 🌐 Open Variables (`wrangler.jsonc` `vars` — Public Text)
-*SearXNG URL is a **public variable** (not a secret):*
+### 🌐 Public Variables (`wrangler.jsonc` `vars`)
 | Variable | Default | Description |
 |---|---|---|
-| **`SEARXNG_URL`** | `""` (empty) | URL of your self-hosted SearXNG (e.g. `http://your-server-ip:8080`). Empty = auto DuckDuckGo ($0 free). |
-| **`DEFAULT_ROUTING_STRATEGY`** | `priority` | Routing strategy (`priority`, `round-robin`, `p2c`, etc.). |
+| **`SEARXNG_URL`** | `""` (empty) | URL of your self-hosted SearXNG (e.g. `http://your-server-ip:8080`). Empty = DuckDuckGo HTML ($0 free). |
+| **`DEFAULT_ROUTING_STRATEGY`** | `priority` | Routing strategy (`priority`, `random`, `lowest-cost`, `weighted`). |
 | **`ENABLE_MODALITY_BRIDGE`** | `true` | Automatic vision-to-text bridge via Gemini / Workers AI. |
 | **`ENABLE_CONTEXT_COMPRESSION`** | `true` | Token saver: message deduplication and terminal log cleanup. |
 | **`ENABLE_JINA_READER`** | `true` | Clean Markdown web fetcher via `r.jina.ai` ($0 free). |
+
+---
+
+## 🔐 Antigravity OAuth & GitHub Secret Scanning
+
+GitHub blocks commits containing Google OAuth secrets (`GOCSPX-...`). To keep your repo 100% clean:
+
+1. **Via Admin Dashboard** — Go to the **Antigravity OAuth** tab, enter your Google Cloud Client ID and Secret, click **Save to KV**. Credentials stay in Cloudflare KV, never in code.
+2. **Via Wrangler Secrets:**
+   ```bash
+   npx wrangler secret put ANTIGRAVITY_CLIENT_ID
+   npx wrangler secret put ANTIGRAVITY_CLIENT_SECRET
+   ```
+3. **Manual Token Import** — Paste your `~/.config/antigravity/tokens.json` or `refresh_token` into the dashboard import area.
+
+---
+
+## 🧪 Usage Examples
+
+### With any OpenAI-compatible client:
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://veroroute-edge.YOUR-SUBDOMAIN.workers.dev/v1",
+    api_key="YOUR_AUTH_TOKEN"
+)
+
+response = client.chat.completions.create(
+    model="@cf/meta/llama-3.3-70b-instruct-fp8-fast",  # Free Workers AI model
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+print(response.choices[0].message.content)
+```
+
+### With curl (streaming):
+```bash
+curl -N https://veroroute-edge.YOUR-SUBDOMAIN.workers.dev/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"@cf/meta/llama-3.3-70b-instruct-fp8-fast","messages":[{"role":"user","content":"Hello!"}],"stream":true}'
+```
+
+### With Claude Code CLI (Anthropic native):
+```bash
+ANTHROPIC_BASE_URL=https://veroroute-edge.YOUR-SUBDOMAIN.workers.dev \
+ANTHROPIC_API_KEY=YOUR_AUTH_TOKEN \
+claude
+```
+
+---
 
 <a id="portugues"></a>
 # 🇧🇷 Português
 
 ## ✨ Visão Geral
 
-O **VeroRoute Edge** é um gateway de IA serverless e roteador inteligente projetado para operar na borda global da **Cloudflare (V8 Isolates)**. Inspirado no ecossistema e estratégias de roteamento do **OmniRoute** e na economia de tokens do **VeroRoute**, ele oferece proxy de baixa latência sem servidores físicos ou containers dedicados.
+O **VeroRoute Edge** é um gateway de IA nativo na borda e roteador inteligente que executa em **Cloudflare Workers (V8 Isolates)**. Inspirado na resiliência de roteamento do **OmniRoute** e na arquitetura de economia de tokens do **VeroRoute**, entrega proxy de IA com baixa latência e zero servidores dedicados.
 
-Conta com uma **cascata de resiliência inteligente** com fallback automático (HTTP 429, 5xx ou timeout), pool de chaves com cooldowns sincronizados via Cloudflare KV, compatibilidade dupla (OpenAI + Anthropic), transcrição automática de imagens para modelos text-only e **Busca Web em Tempo Real (RAG Integrado)** com provedores de free tier real (SearXNG, DuckDuckGo HTML, Tavily, Jina Reader).
+**Funciona sem nenhuma chave de API** — o Cloudflare Workers AI (free tier: 10.000 neurônios/dia) e a busca DuckDuckGo HTML ($0) já vêm integrados. Adicione chaves de provedor apenas para os modelos que desejar.
 
 ---
 
-## 🚀 Deploy em 1 Clique na Cloudflare
+## 🚀 Deploy em 1 Clique
 
-A maneira mais rápida e fácil de colocar seu gateway no ar. Não requer terminal, clone local nem instalação do Wrangler:
+A maneira mais rápida de colocar seu gateway no ar. Não requer terminal nem instalação local:
 
 <div align="center">
 
@@ -201,11 +276,45 @@ A maneira mais rápida e fácil de colocar seu gateway no ar. Não requer termin
 
 </div>
 
-### Passo a Passo:
-1. Clique no botão **Deploy to Cloudflare** acima.
-2. Conecte sua conta do GitHub para autorizar o fork/clone automático.
-3. A Cloudflare fará o build e publicação instantânea em mais de 300 data centers no mundo.
-4. No painel do Worker, crie os dois KV Namespaces (`OMNI_CACHE` e `OMNI_KEYS`).
+### Passo a Passo Após o Deploy:
+
+1. **Clique** no botão acima e autorize a Cloudflare a fazer o fork no seu GitHub.
+2. A Cloudflare faz build e publica o Worker em **300+ data centers** no mundo.
+3. **Crie 2 KV Namespaces** no painel da Cloudflare:
+   - Vá em **Workers & Pages → KV** → **Create a namespace**
+   - Crie `veroroute-edge-OMNI_CACHE` e `veroroute-edge-OMNI_KEYS`
+4. **Vincule o KV** ao seu Worker:
+   - Vá em **Workers & Pages → veroroute-edge → Settings → Bindings**
+   - Adicione KV Namespace binding: `OMNI_CACHE` → seu namespace de cache
+   - Adicione KV Namespace binding: `OMNI_KEYS` → seu namespace de keys
+5. **Configure seu AUTH_TOKEN** (obrigatório, o gateway não funciona sem):
+   - Vá em **Settings → Variables and Secrets → Add**
+   - Nome: `AUTH_TOKEN`, Tipo: **Secret**, Valor: senha forte (mín 20 caracteres, maiúscula + minúscula + número + caractere especial)
+6. **(Opcional)** Adicione chaves de API como secrets para os provedores desejados:
+   - `GEMINI_API_KEYS`, `GROQ_API_KEYS`, `CEREBRAS_API_KEYS`, `OPENAI_API_KEYS`, etc.
+   - Pule este passo para usar apenas os modelos gratuitos do Cloudflare Workers AI.
+7. **Pronto!** Acesse em `https://veroroute-edge.<seu-subdominio>.workers.dev`
+
+### Alternativa: Deploy via CLI (Wrangler)
+
+```bash
+# Clone
+git clone https://github.com/samucamg/veroroute-edge.git
+cd veroroute-edge
+npm install
+
+# Crie os KV namespaces
+npx wrangler kv:namespace create OMNI_CACHE
+npx wrangler kv:namespace create OMNI_KEYS
+
+# Cole os IDs retornados no wrangler.jsonc
+
+# Defina o token de auth obrigatório
+npx wrangler secret put AUTH_TOKEN
+
+# Deploy
+npx wrangler deploy
+```
 
 ---
 
@@ -215,7 +324,7 @@ A maneira mais rápida e fácil de colocar seu gateway no ar. Não requer termin
 |---|---|---|---|
 | `GET` | `/` | Gateway | Dashboard moderno em Glassmorphism e Playground interativo |
 | `GET` | `/health` | Gateway | Health check, status da arquitetura e versão |
-| `GET` | `/v1/models` | OpenAI-style | Catálogo unificado de modelos ativos, preços e context length |
+| `GET` | `/v1/models` | OpenAI | Catálogo unificado de modelos ativos, preços e context length |
 | `POST` | `/v1/chat/completions` | OpenAI | Chat, visão multimodal, tool calling e streaming SSE com cascata |
 | `POST` | `/v1/responses` | OpenAI | Responses API estruturada com suporte a reasoning |
 | `POST` | `/v1/messages` | Anthropic | Endpoint nativo Anthropic (Claude Code CLI, Cline, Cursor, Roo Code) |
@@ -224,136 +333,121 @@ A maneira mais rápida e fácil de colocar seu gateway no ar. Não requer termin
 | `POST` | `/v1/audio/speech` | OpenAI | Conversão de texto em fala (TTS) multi-engine |
 | `POST` | `/v1/audio/transcriptions` | OpenAI | Transcrição de áudio multipart via Workers AI Whisper |
 | `POST` | `/v1/audio/translations` | OpenAI | Tradução de áudio para o inglês |
-| `POST` | `/v1/search` | Gateway | Hub dedicado de busca web (SearXNG ➔ DuckDuckGo ➔ Tavily) |
+| `POST` | `/v1/search` | Gateway | Hub dedicado de busca web (SearXNG → DuckDuckGo → Tavily) |
 | `POST` | `/v1/web/fetch` | Gateway | Extrator de URLs em Markdown limpo via Jina Reader (`r.jina.ai`) |
-| `GET` | `/api/mcp/sse` | Servidor MCP | Transporte SSE do Servidor MCP |
-| `POST` | `/api/mcp/messages` | Servidor MCP | Execução de ferramentas via JSON-RPC 2.0 |
+| `GET` | `/api/mcp/sse` | MCP | Transporte SSE do Servidor MCP |
+| `POST` | `/api/mcp/messages` | MCP | Execução de ferramentas via JSON-RPC 2.0 |
 
 ---
 
-## 🔍 Busca Web & RAG: Provedores com Free Tier Real (Sem Cartão)
+## 🔍 Busca Web & RAG: Provedores com Free Tier Real
 
-| Provedor | Função | Cota Gratuita | Como Configurar | Cartão de Crédito? |
+| Provedor | Função | Cota Gratuita | Como Configurar | Cartão? |
 |---|---|---|---|:---:|
 | **SearXNG** | Busca Web | **100% Grátis ($0)**, Ilimitado | Auto-hospedado via [Docker Compose / Portainer](deploy/searxng/) | ❌ **Não** |
 | **DuckDuckGo HTML** | Busca Web | **100% Grátis ($0)**, Ilimitado | Scraper nativo na borda, sem chave | ❌ **Não** |
-| **Jina Reader (`r.jina.ai`)** | Leitura de URL | **100% Grátis ($0)**, Ilimitado | Converte páginas web em Markdown limpo | ❌ **Não** |
+| **Jina Reader** | Leitura URL | **100% Grátis ($0)**, Ilimitado | Converte páginas web em Markdown limpo | ❌ **Não** |
 | **Tavily Search** | Busca Web | **1.000 buscas/mês grátis** | Chave gratuita em [tavily.com](https://tavily.com) | ❌ **Não** |
 
 ---
 
-## 🐳 Suba seu próprio SearXNG (Docker Compose e Portainer Stack)
+## 🐳 SearXNG Auto-Hospedado (Docker & Portainer)
 
-Arquivos prontos disponíveis na pasta [`deploy/searxng/`](deploy/searxng/):
+Arquivos prontos em [`deploy/searxng/`](deploy/searxng/):
 
-### Opção 1: Via Docker Compose (Terminal)
+### Opção 1: Docker Compose
 ```bash
 cd deploy/searxng
 docker compose up -d
 ```
 
-### Opção 2: Via Portainer Stack (Interface Web)
-1. No Portainer, acesse **Stacks** ➔ **Add stack**.
-2. Nomeie a stack como: `searxng-gateway`.
-3. Copie e cole o conteúdo de [`deploy/searxng/portainer-stack.yml`](deploy/searxng/portainer-stack.yml).
+### Opção 2: Portainer Stack
+1. No Portainer, **Stacks** → **Add stack**.
+2. Nome: `searxng-gateway`.
+3. Cole o conteúdo de [`deploy/searxng/portainer-stack.yml`](deploy/searxng/portainer-stack.yml).
 4. Clique em **Deploy the stack**.
-5. No seu Worker, adicione a URL como **variável pública** (`wrangler.jsonc` `vars` ou Settings ➔ Variables no painel):
+5. Configure `SEARXNG_URL` no seu Worker:
    ```jsonc
-   "SEARXNG_URL": "http://IP_DO_SEU_SERVIDOR:8080"
+   "SEARXNG_URL": "http://SEU_IP:8080"
    ```
-   *(Não precisa ser segredo; é apenas a URL HTTP do seu buscador).*
-
----
-
----
-
-## 🔀 Combos de Roteamento Inteligente (O Nome do Combo é o Modelo)
-
-No VeroRoute Edge, **o nome do combo atua diretamente como o identificador do modelo**. Ao enviar uma requisição com `"model": "nome-do-combo"`, o gateway executa a cascata entre os alvos cadastrados de acordo com a estratégia definida:
-
-| Combo Padrão | Estratégia | Modelos e Provedores na Cascata |
-| :--- | :--- | :--- |
-| `omni-free` | Prioridade / Failover | Gemini 2.5 Flash ➔ Groq ➔ Cerebras ➔ Cloudflare AI ➔ OpenRouter ➔ Pollinations |
-| `omni-code` | Prioridade / Failover | Antigravity Gemini 2.5 Pro ➔ 1min.ai GPT-4o ➔ Qwen 2.5 Coder ➔ Groq ➔ Cerebras |
-| `omni-fast` | P2C Load-Balance | Cerebras (2.000 t/s) + Groq (500 t/s) balanceado por menor carga |
-
-### 🛠️ Gerenciamento de Combos no Dashboard:
-1. Acesse a aba **Combos & Quotas** no Dashboard.
-2. Clique em **+ Novo Combo** para definir o identificador do modelo (ex: `combo-super-payload`), descrição e estratégia (`priority`, `round-robin`, `p2c`, `lowest-cost`, `random`).
-3. Adicione ou exclua modelos da lista a qualquer momento.
-4. Clique em **▶️ Testar Modelos** para realizar testes de ping/latência em tempo real de cada modelo do combo.
-
----
-
-## 🤖 Integração com DeepSeek Harness (DSH)
-
-O **DeepSeek Harness (`dsh`)** é o framework oficial e modular de orquestração de agentes autônomos da DeepSeek AI (`npx @deepseek-ai/dsh web` ou CLI `dsh`).
-
-### Como Usar com o VeroRoute Edge:
-```bash
-# 1. Aponte os endpoints do DSH para o seu Worker:
-export OPENAI_BASE_URL="https://seu-worker.workers.dev/v1"
-export OPENAI_API_KEY="sk-vr-seu-token" # Chave virtual do painel ou AUTH_TOKEN
-export DEEPSEEK_API_BASE="https://seu-worker.workers.dev/v1"
-
-# 2. Inicie o DeepSeek Harness passando qualquer Combo como modelo:
-npx @deepseek-ai/dsh web --model omni-code
-
-# Ou utilize combos customizados via CLI:
-dsh --model combo-super-payload
-```
-
----
-
-## 🔐 Conexão OAuth com Antigravity CLI & Solução GitHub Secret Scanning
-
-O GitHub possui um scanner automatizado que **bloqueia commits contendo segredos do Google OAuth** (`GOCSPX-...`). Para manter seu repositório 100% seguro e sem bloqueios de commit:
-
-1. **Configuração via Painel de Administração:**
-   - Acesse o Dashboard na aba **Antigravity OAuth**.
-   - Insira o seu `Client ID` e `Client Secret` do Google Cloud Code Assist.
-   - Clique em **Salvar Credenciais no KV OMNI_KEYS**.
-   - As credenciais ficam salvas estritamente no seu Cloudflare KV, sem nunca tocar no código Git.
-2. **Configuração via Cloudflare Secrets (Wrangler):**
-   ```bash
-   npx wrangler secret put ANTIGRAVITY_CLIENT_ID
-   npx wrangler secret put ANTIGRAVITY_CLIENT_SECRET
-   ```
-3. **Importação Manual de Tokens (Sem Navegador):**
-   - Cole o conteúdo de `~/.config/antigravity/tokens.json` ou seu `refresh_token` na área de importação do painel para conexão imediata com os modelos Claude 3.7 Sonnet e Gemini 2.5 Pro.
 
 ---
 
 ## ⚙️ Variáveis de Ambiente e Segredos
 
 > 💡 **`AUTH_TOKEN` é obrigatório; as demais chaves de API são opcionais.**
-> Você **NÃO** precisa preencher todas as chaves de API. Configure apenas **uma única chave** do provedor que desejar (ou nenhuma, utilizando o **Cloudflare Workers AI nativo gratuito** e o **DuckDuckGo**). O gateway direciona e faz fallback automaticamente.
+> Você **NÃO** precisa preencher todas as chaves. Configure apenas **uma única chave** do provedor que desejar (ou nenhuma, usando o **Cloudflare Workers AI nativo gratuito** e **DuckDuckGo**). O gateway direciona e faz fallback automaticamente.
 
 ### 🔒 Segredos e Chaves (`.dev.vars` / Cloudflare Secrets)
-*Adicione apenas o que você for utilizar:*
 | Chave / Segredo | Obrigatório? | Descrição |
 |---|:---:|---|
-| **`AUTH_TOKEN`** | **Obrigatório** | Token mestre para autenticar todas as requisições API e admin. O gateway retorna 503 se não configurado. |
-| **`ANTIGRAVITY_CLIENT_SECRET`** | Opcional | Client Secret do Google OAuth (evite commitar no git; use o painel ou secret). |
-| **`ANTIGRAVITY_CLIENT_ID`** | Opcional | Client ID do Google OAuth para o Antigravity CLI. |
-| **`GEMINI_API_KEYS`** | Opcional | Chaves do Google Gemini (AI Studio). Múltiplas chaves separadas por vírgula. |
-| **`GROQ_API_KEYS`** | Opcional | Chaves da Groq Cloud para modelos ultrarrápidos (Llama 3.3). |
-| **`CEREBRAS_API_KEYS`** | Opcional | Chaves da Cerebras Cloud (> 2.000 t/s). |
-| **`OPENAI_API_KEYS`** | Opcional | Chaves oficiais da OpenAI para fallback de áudio/TTS ou GPT. |
-| **`TAVILY_API_KEYS`** | Opcional | Chave de busca web da Tavily (1.000 buscas/mês grátis). |
+| **`AUTH_TOKEN`** | **Obrigatório** | Token mestre para autenticar todas as requisições API e admin. Retorna 503 se não configurado. Mín 20 caracteres com maiúscula, minúscula, número e caractere especial. |
+| **`GEMINI_API_KEYS`** | Opcional | Chaves Google Gemini (separadas por vírgula para rodízio). |
+| **`GROQ_API_KEYS`** | Opcional | Chaves Groq Cloud para Llama 3.3 ultrarrápido. |
+| **`CEREBRAS_API_KEYS`** | Opcional | Chaves Cerebras Cloud (2.000+ tokens/s). |
+| **`OPENAI_API_KEYS`** | Opcional | Chaves oficiais OpenAI para GPT ou fallback de áudio. |
+| **`TAVILY_API_KEYS`** | Opcional | Chave Tavily para busca web (1.000 buscas/mês grátis). |
 
-### 🌐 Variáveis Públicas de Ambiente (`wrangler.jsonc` `vars` — Texto Aberto)
-*A URL do SearXNG é uma **variável pública** (não é segredo/chave). Configure apenas se tiver uma instância própria:*
+### 🌐 Variáveis Públicas (`wrangler.jsonc` `vars`)
 | Variável | Padrão | Descrição |
 |---|---|---|
-| **`SEARXNG_URL`** | `""` (vazio) | URL da sua instância SearXNG (ex: `http://seu-ip:8080`). Se deixar vazio, usa **DuckDuckGo HTML gratuito ($0 sem chave)**. |
-| **`DEFAULT_ROUTING_STRATEGY`** | `priority` | Estratégia de balanceamento (`priority`, `round-robin`, `p2c`, etc.). |
-| **`ENABLE_MODALITY_BRIDGE`** | `true` | Transcreve imagens para texto em modelos text-only via Gemini/Workers AI. |
-| **`ENABLE_CONTEXT_COMPRESSION`** | `true` | Ativa deduplicação e limpeza de logs de terminal para economia de tokens. |
-| **`ENABLE_JINA_READER`** | `true` | Ativa extração de páginas web em Markdown limpo via `r.jina.ai` ($0 grátis). |
+| **`SEARXNG_URL`** | `""` | URL do seu SearXNG (ex: `http://seu-ip:8080`). Vazio = DuckDuckGo HTML ($0). |
+| **`DEFAULT_ROUTING_STRATEGY`** | `priority` | Estratégia de roteamento (`priority`, `random`, `lowest-cost`, `weighted`). |
+| **`ENABLE_MODALITY_BRIDGE`** | `true` | Bridge automático de visão para texto via Gemini / Workers AI. |
+| **`ENABLE_CONTEXT_COMPRESSION`** | `true` | Economia de tokens: deduplicação e limpeza de logs de terminal. |
+| **`ENABLE_JINA_READER`** | `true` | Leitor web em Markdown limpo via `r.jina.ai` ($0). |
 
 ---
 
-## 📄 Licença
+## 🔐 Antigravity OAuth & GitHub Secret Scanning
 
-Distribuído sob licença MIT. Veja [LICENSE](LICENSE) para detalhes.
+O GitHub bloqueia commits contendo secrets do Google OAuth (`GOCSPX-...`). Para manter seu repo limpo:
+
+1. **Via Painel Admin** — Aba **Antigravity OAuth**, insira Client ID e Secret, clique **Salvar no KV**. Credenciais ficam no Cloudflare KV, nunca no código.
+2. **Via Wrangler Secrets:**
+   ```bash
+   npx wrangler secret put ANTIGRAVITY_CLIENT_ID
+   npx wrangler secret put ANTIGRAVITY_CLIENT_SECRET
+   ```
+3. **Importação Manual** — Cole o conteúdo de `~/.config/antigravity/tokens.json` ou `refresh_token` na área de importação do painel.
+
+---
+
+## 🧪 Exemplos de Uso
+
+### Com qualquer cliente OpenAI-compatible:
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://veroroute-edge.SEU-SUBDOMINIO.workers.dev/v1",
+    api_key="SEU_AUTH_TOKEN"
+)
+
+resposta = client.chat.completions.create(
+    model="@cf/meta/llama-3.3-70b-instruct-fp8-fast",  # Modelo grátis Workers AI
+    messages=[{"role": "user", "content": "Olá!"}]
+)
+print(resposta.choices[0].message.content)
+```
+
+### Com curl (streaming):
+```bash
+curl -N https://veroroute-edge.SEU-SUBDOMINIO.workers.dev/v1/chat/completions \
+  -H "Authorization: Bearer SEU_AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"@cf/meta/llama-3.3-70b-instruct-fp8-fast","messages":[{"role":"user","content":"Olá!"}],"stream":true}'
+```
+
+### Com Claude Code CLI (Anthropic nativo):
+```bash
+ANTHROPIC_BASE_URL=https://veroroute-edge.SEU-SUBDOMINIO.workers.dev \
+ANTHROPIC_API_KEY=SEU_AUTH_TOKEN \
+claude
+```
+
+---
+
+## 📄 License
+
+[MIT](LICENSE) — © 2025 Samuel Santos
