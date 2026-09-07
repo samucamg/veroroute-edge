@@ -1982,7 +1982,7 @@ dsh --model combo-super-payload
             if (cb) { cb.disabled = false; cb.checked = false; }
             var statusSpan = discItem.querySelector('span[style*="var(--emerald)"]');
             if (statusSpan) {
-              statusSpan.outerHTML = '<button type="button" class="btn btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.7rem; flex-shrink:0;" onclick="quickAddSingleModel(\'' + escapeHtml(modelName) + '\')">+ Adicionar</button>';
+              statusSpan.outerHTML = '<button type="button" class="btn btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.7rem; flex-shrink:0;" data-model-name="' + escapeHtml(modelName) + '" onclick="quickAddSingleModel(this.dataset.modelName)">+ Adicionar</button>';
             }
           }
         } else {
