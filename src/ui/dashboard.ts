@@ -2079,8 +2079,6 @@ dsh --model combo-super-payload
         showToast('Erro: ' + e.message, 'error');
       }
     }
-      }
-    }
 
     // ============ COMBOS & QUOTAS ============
     let currentCombos = {};
