@@ -1026,6 +1026,31 @@ dsh --model combo-super-payload
       else if (tabId === 'admin') loadAdmin();
     }
 
+    function getAdminToken() { return sessionStorage.getItem('vr_admin_token') || ''; }
+    function setAdminToken(t) { if (t && t.trim()) sessionStorage.setItem('vr_admin_token', t.trim()); }
+    function promptAdminToken(force) {
+      var cur = getAdminToken();
+      if (cur && !force) return cur;
+      var t = prompt('VeroRoute Admin: insira o AUTH_TOKEN:');
+      if (t && t.trim()) { setAdminToken(t); return t.trim(); }
+      return cur;
+    }
+    function adminFetch(url, opts) {
+      var token = getAdminToken();
+      if (!token) { token = promptAdminToken(true); if (!token) return Promise.reject(new Error('Token admin nao fornecido.')); }
+      opts = opts || {};
+      opts.headers = Object.assign({ 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, opts.headers || {});
+      return fetch(url, opts).then(function(res) {
+        if (res.status === 401 || res.status === 503) { sessionStorage.removeItem('vr_admin_token'); alert('Token invalido ou servidor sem AUTH_TOKEN.'); }
+        return res;
+      });
+    }
+    function v1Fetch(url, opts) {
+      opts = opts || {}; var tok = getAdminToken();
+      if (tok) opts.headers = Object.assign({ 'Authorization': 'Bearer ' + tok }, opts.headers || {});
+      return fetch(url, opts);
+    }
+
     document.getElementById('endpoint-url').innerText = window.location.origin + '/v1';
 
     async function sendMessage() {
@@ -1051,7 +1076,7 @@ dsh --model combo-super-payload
       const search = document.getElementById('chat-search').value === 'true';
 
       try {
-        const res = await fetch('/v1/chat/completions', {
+        const res = await v1Fetch('/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1100,7 +1125,7 @@ dsh --model combo-super-payload
       const val = document.getElementById('agy-token-input').value.trim();
       if (!val) return alert('Por favor, insira o token ou JSON');
       try {
-        const res = await fetch('/api/oauth/antigravity/import', {
+        const res = await adminFetch('/api/oauth/antigravity/import', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token: val })
@@ -1127,7 +1152,7 @@ dsh --model combo-super-payload
       const statusEl = document.getElementById('admin-status');
       if (statusEl) statusEl.innerText = 'Carregando...';
       try {
-        const res = await fetch('/api/admin/config');
+        const res = await adminFetch('/api/admin/config');
         if (!res.ok) {
           const err = await res.text();
           if (statusEl) statusEl.innerText = 'Erro: ' + err;
@@ -1171,7 +1196,7 @@ dsh --model combo-super-payload
 
     async function toggleProvider(id, enabled) {
       try {
-        const res = await fetch('/api/admin/providers/' + id + '/toggle', {
+        const res = await adminFetch('/api/admin/providers/' + id + '/toggle', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ enabled: enabled })
@@ -1186,7 +1211,7 @@ dsh --model combo-super-payload
       const key = prompt('Digite a chave de API a adicionar (para pool de balanceamento):');
       if (!key) return;
       try {
-        const res = await fetch('/api/admin/providers/' + id + '/keys', {
+        const res = await adminFetch('/api/admin/providers/' + id + '/keys', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ keys: [key] })
@@ -1201,7 +1226,7 @@ dsh --model combo-super-payload
       const model = prompt('Digite o nome do modelo a adicionar:');
       if (!model) return;
       try {
-        const res = await fetch('/api/admin/providers/' + id + '/models', {
+        const res = await adminFetch('/api/admin/providers/' + id + '/models', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: model })
@@ -1214,7 +1239,7 @@ dsh --model combo-super-payload
 
     async function removeModel(id, model) {
       try {
-        const res = await fetch('/api/admin/providers/' + id + '/models', {
+        const res = await adminFetch('/api/admin/providers/' + id + '/models', {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: model })
@@ -1228,7 +1253,7 @@ dsh --model combo-super-payload
     async function deleteCustomProvider(id) {
       if (!confirm('Excluir o provedor customizado?')) return;
       try {
-        const res = await fetch('/api/admin/providers/' + id, { method: 'DELETE' });
+        const res = await adminFetch('/api/admin/providers/' + id, { method: 'DELETE' });
         const data = await res.json();
         loadAdmin();
         alert(data.ok ? 'Provedor excluído!' : 'Erro: ' + JSON.stringify(data.error || data));
@@ -1262,7 +1287,7 @@ dsh --model combo-super-payload
       };
 
       try {
-        const res = await fetch('/api/admin/providers', {
+        const res = await adminFetch('/api/admin/providers', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body)
@@ -1281,7 +1306,7 @@ dsh --model combo-super-payload
       const q = document.getElementById('adm-model-search').value.trim();
       const target = document.getElementById('adm-model-results');
       try {
-        const res = await fetch('/api/admin/models?q=' + encodeURIComponent(q));
+        const res = await adminFetch('/api/admin/models?q=' + encodeURIComponent(q));
         const data = await res.json();
         let html = '';
         (data.models || []).forEach(function(m) {
@@ -1300,7 +1325,7 @@ dsh --model combo-super-payload
       const grid = document.getElementById('admin-presets-grid');
       if (!grid) return;
       try {
-        const res = await fetch('/api/admin/presets');
+        const res = await adminFetch('/api/admin/presets');
         const data = await res.json();
         grid.innerHTML = '';
         (data.presets || []).forEach(function(p) {
@@ -1337,7 +1362,7 @@ dsh --model combo-super-payload
 
     async function loadSearchConfig() {
       try {
-        const res = await fetch('/api/admin/search');
+        const res = await adminFetch('/api/admin/search');
         const data = await res.json();
         if (data.ok && data.searchConfig) {
           const cfg = data.searchConfig;
@@ -1360,7 +1385,7 @@ dsh --model combo-super-payload
       const tavilyApiKey = document.getElementById('adm-search-tavily').value.trim();
 
       try {
-        const res = await fetch('/api/admin/search', {
+        const res = await adminFetch('/api/admin/search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ engine, searxngUrl, serperApiKey, braveApiKey, tavilyApiKey })
@@ -1382,7 +1407,7 @@ dsh --model combo-super-payload
       if (!q) return alert('Digite uma consulta para testar');
       resEl.innerHTML = 'Buscando nos motores configurados...';
       try {
-        const res = await fetch('/api/admin/search/test', {
+        const res = await adminFetch('/api/admin/search/test', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: q })
@@ -1409,7 +1434,7 @@ dsh --model combo-super-payload
       const list = document.getElementById('adm-vkey-list');
       if (!list) return;
       try {
-        const res = await fetch('/api/admin/virtual-keys');
+        const res = await adminFetch('/api/admin/virtual-keys');
         const data = await res.json();
         list.innerHTML = '';
         if (!data.keys || data.keys.length === 0) {
@@ -1436,7 +1461,7 @@ dsh --model combo-super-payload
       const name = document.getElementById('adm-vkey-name').value.trim();
       if (!name) return alert('Informe o nome do cliente ou IDE');
       try {
-        const res = await fetch('/api/admin/virtual-keys', {
+        const res = await adminFetch('/api/admin/virtual-keys', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: name })
@@ -1457,7 +1482,7 @@ dsh --model combo-super-payload
     async function deleteVirtualKey(id) {
       if (!confirm('Revogar esta chave virtual permanentemente? Clientes que a utilizam perderão o acesso.')) return;
       try {
-        const res = await fetch('/api/admin/virtual-keys/' + id, { method: 'DELETE' });
+        const res = await adminFetch('/api/admin/virtual-keys/' + id, { method: 'DELETE' });
         const data = await res.json();
         if (data.ok) {
           loadVirtualKeys();
@@ -1471,7 +1496,7 @@ dsh --model combo-super-payload
 
     function escapeHtml(str) {
       if (!str) return '';
-      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
 
     // ============ ANTIGRAVITY OAUTH & KV CONFIG ============
@@ -1481,7 +1506,7 @@ dsh --model combo-super-payload
       const authBtn = document.getElementById('agy-auth-btn');
       if (!badge) return;
       try {
-        const res = await fetch('/api/admin/antigravity/status');
+        const res = await adminFetch('/api/admin/antigravity/status');
         const data = await res.json();
         if (data.isConfigured) {
           badge.innerText = 'Pronto para Uso';
@@ -1509,7 +1534,7 @@ dsh --model combo-super-payload
       if (!clientId || !clientSecret) return alert('Por favor, informe tanto o Client ID quanto o Client Secret.');
 
       try {
-        const res = await fetch('/api/admin/antigravity/config', {
+        const res = await adminFetch('/api/admin/antigravity/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ clientId: clientId, clientSecret: clientSecret })
@@ -1535,7 +1560,7 @@ dsh --model combo-super-payload
       const container = document.getElementById('combos-container');
       if (!container) return;
       try {
-        const res = await fetch('/api/admin/combos');
+        const res = await adminFetch('/api/admin/combos');
         const data = await res.json();
         currentCombos = {};
         (data.combos || []).forEach(function(c) { currentCombos[c.id] = c; });
@@ -1680,7 +1705,7 @@ dsh --model combo-super-payload
       if (!id) return alert('O identificador/nome do combo é obrigatório.');
 
       try {
-        const res = await fetch('/api/admin/combos', {
+        const res = await adminFetch('/api/admin/combos', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1707,7 +1732,7 @@ dsh --model combo-super-payload
     async function deleteCombo(id) {
       if (!confirm('Deseja excluir o combo "' + id + '"? Clientes com esse modelo deixarão de funcionar.')) return;
       try {
-        const res = await fetch('/api/admin/combos/' + id, { method: 'DELETE' });
+        const res = await adminFetch('/api/admin/combos/' + id, { method: 'DELETE' });
         const data = await res.json();
         if (data.ok) loadCombos();
         else alert('Erro ao excluir: ' + JSON.stringify(data));
@@ -1722,7 +1747,7 @@ dsh --model combo-super-payload
       const mod = prompt('Informe o nome do modelo (ex: gemini-2.5-flash, llama-3.3-70b-versatile, qwen2.5-coder-32b-instruct):');
       if (!mod) return;
 
-      fetch('/api/admin/combos/' + comboId + '/models', {
+      adminFetch('/api/admin/combos/' + comboId + '/models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: prov.trim(), model: mod.trim() })
@@ -1735,7 +1760,7 @@ dsh --model combo-super-payload
     async function removeModelFromCombo(comboId, provider, model) {
       if (!confirm('Remover ' + provider + '/' + model + ' deste combo?')) return;
       try {
-        const res = await fetch('/api/admin/combos/' + comboId + '/models', {
+        const res = await adminFetch('/api/admin/combos/' + comboId + '/models', {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ provider: provider, model: model })
@@ -1763,7 +1788,7 @@ dsh --model combo-super-payload
       });
 
       try {
-        const res = await fetch('/api/admin/combos/test', {
+        const res = await adminFetch('/api/admin/combos/test', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ comboId: comboId })
