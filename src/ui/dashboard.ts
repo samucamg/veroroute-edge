@@ -330,6 +330,7 @@ export function renderDashboardHtml(): string {
       <button class="nav-btn" onclick="showTab('combos')">Combos & Quotas</button>
       <button class="nav-btn" onclick="showTab('playground')">Playground</button>
       <button class="nav-btn" onclick="showTab('docs')">Clientes</button>
+      <button class="nav-btn" onclick="showTab('admin')">Administração</button>
     </nav>
   </header>
 
@@ -688,6 +689,136 @@ print(response.choices[0].message.content)
         </div>
       </div>
     </div>
+
+    <!-- TAB 8: ADMINISTRACAO -->
+    <div id="tab-admin" class="tab-pane">
+      <div class="card">
+        <div class="card-title">🛠️ Painel de Administração de Provedores, Chaves e Modelos</div>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">
+          Gerencie dinamicamente provedores, chaves de API para balanceamento e modelos. Todas as alterações são persistidas no Cloudflare KV.
+        </p>
+
+        <div style="margin-bottom: 1.5rem;">
+          <button class="btn" onclick="loadAdmin()">🔄 Recarregar Painel</button>
+          <span id="admin-status" style="color: var(--text-muted); font-size: 0.85rem; margin-left: 0.75rem;"></span>
+        </div>
+
+        <div class="provider-grid" id="admin-provider-grid">
+          <!-- Renderizado via JS -->
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">➕ Adicionar Novo Provedor (OpenAI / Anthropic Compatível)</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div><label style="font-size:0.85rem; color: var(--text-muted);">Nome do Provedor:</label>
+            <input type="text" id="acp-name" placeholder="Ex: Minha Empresa"></div>
+          <div><label style="font-size:0.85rem; color: var(--text-muted);">Protocolo:</label>
+            <select id="acp-protocol">
+              <option value="openai">OpenAI Compatível</option>
+              <option value="anthropic">Anthropic Compatível</option>
+            </select></div>
+          <div><label style="font-size:0.85rem; color: var(--text-muted);">Base URL:</label>
+            <input type="text" id="acp-baseurl" placeholder="https://api.suaempresa.com/v1"></div>
+          <div><label style="font-size:0.85rem; color: var(--text-muted);">Chave(s) API (vírgula p/ pool):</label>
+            <input type="text" id="acp-keys" placeholder="sk-...,sk-..."></div>
+          <div><label style="font-size:0.85rem; color: var(--text-muted);">Modelos (vírgula):</label>
+            <input type="text" id="acp-models" placeholder="gpt-4o,claude-3-5-sonnet"></div>
+          <div><label style="font-size:0.85rem; color: var(--text-muted);">Custo / 1M tokens (entrada):</label>
+            <input type="number" id="acp-costin" placeholder="0" value="0"></div>
+          <div style="display:flex; gap:1rem; align-items:center;">
+            <label style="font-size:0.85rem; color: var(--text-muted);">Free Tier?</label><input type="checkbox" id="acp-freetier" checked>
+            <label style="font-size:0.85rem; color: var(--text-muted);">Tool Calling?</label><input type="checkbox" id="acp-tools" checked>
+            <label style="font-size:0.85rem; color: var(--text-muted);">Visão?</label><input type="checkbox" id="acp-vision">
+          </div>
+        </div>
+        <button class="btn" style="margin-top:1.25rem;" onclick="addCustomProvider()">Adicionar Provedor</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🔎 Buscar / Gerenciar Modelos</div>
+        <div style="display:flex; gap:0.75rem; margin-bottom:1rem;">
+          <input type="text" id="adm-model-search" placeholder="Buscar modelo ou provedor... ex: llama, gemini, gpt">
+          <button class="btn btn-secondary" onclick="searchAdminModels()">Buscar</button>
+        </div>
+        <div id="adm-model-results" style="max-height:300px; overflow-y:auto;"></div>
+      </div>
+
+      <!-- TEMPLATES DE PROVEDORES FREE TIERS (RANKING ELO) -->
+      <div class="card">
+        <div class="card-title">⚡ Templates Rápidos: Top Provedores Gratuitos (Ranking ELO)</div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">
+          Clique em um template para preencher automaticamente as configurações com os melhores endpoints e modelos gratuitos disponíveis.
+        </p>
+        <div class="provider-grid" id="admin-presets-grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));">
+          <!-- Renderizado via JS -->
+        </div>
+      </div>
+
+      <!-- CONFIGURAÇÃO DE BUSCA WEB NO KV -->
+      <div class="card">
+        <div class="card-title">🌐 Configuração de Motores de Busca & RAG (Persistido no KV)</div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.25rem;">
+          Configure os motores de busca para RAG serverless. Se deixar em branco, o sistema usará <strong>DuckDuckGo ($0 sem chave)</strong> automaticamente.
+        </p>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+          <div>
+            <label style="font-size:0.85rem; color: var(--text-muted);">Motor de Busca Principal:</label>
+            <select id="adm-search-engine">
+              <option value="auto">Auto (Cascata Inteligente)</option>
+              <option value="searxng">SearXNG (Self-Hosted / search.br5.com.br)</option>
+              <option value="duckduckgo">DuckDuckGo ($0 Sem Cadastro)</option>
+              <option value="serper">Google Serper (2.500 buscas grátis)</option>
+              <option value="brave">Brave Search API (2.000 buscas/mês grátis)</option>
+              <option value="tavily">Tavily AI Search (1.000 buscas/mês grátis)</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.85rem; color: var(--text-muted);">SearXNG URL (Self-Hosted):</label>
+            <input type="text" id="adm-search-searx" placeholder="Ex: https://search.br5.com.br">
+          </div>
+          <div>
+            <label style="font-size:0.85rem; color: var(--text-muted);">Google Serper API Key:</label>
+            <input type="password" id="adm-search-serper" placeholder="serper-api-key...">
+          </div>
+          <div>
+            <label style="font-size:0.85rem; color: var(--text-muted);">Brave Search API Key:</label>
+            <input type="password" id="adm-search-brave" placeholder="BSA...">
+          </div>
+          <div>
+            <label style="font-size:0.85rem; color: var(--text-muted);">Tavily API Key:</label>
+            <input type="password" id="adm-search-tavily" placeholder="tvly-...">
+          </div>
+        </div>
+        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem;">
+          <button class="btn" onclick="saveSearchConfig()">💾 Salvar Configurações de Busca no KV</button>
+        </div>
+
+        <div style="border-top: 1px solid var(--card-border); padding-top: 1rem; margin-top: 1rem;">
+          <label style="font-size:0.85rem; color: var(--text-muted); font-weight:600;">Testar Busca em Tempo Real:</label>
+          <div style="display:flex; gap:0.5rem; margin-top:0.4rem;">
+            <input type="text" id="adm-search-test-query" placeholder="Digite uma consulta de teste... ex: últimas notícias de IA">
+            <button class="btn btn-secondary" onclick="testSearch()">Testar</button>
+          </div>
+          <div id="adm-search-test-result" style="margin-top:0.75rem; font-size:0.8rem; max-height:200px; overflow-y:auto;"></div>
+        </div>
+      </div>
+
+      <!-- CHAVES VIRTUAIS / API MANAGER -->
+      <div class="card">
+        <div class="card-title">🔑 Gerenciador de Chaves de Clientes (API Manager Light)</div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">
+          Crie chaves virtuais exclusivas (<code>sk-vr-...</code>) para amigos, equipes ou IDEs (Cursor, Cline, Claude Code). O uso é contabilizado de forma independente no KV.
+        </p>
+        <div style="display: flex; gap: 0.75rem; margin-bottom: 1.25rem;">
+          <input type="text" id="adm-vkey-name" placeholder="Nome do cliente ou IDE (ex: Cursor Samuel)">
+          <button class="btn" onclick="createVirtualKey()">+ Criar Chave Virtual</button>
+        </div>
+        <div id="adm-vkey-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
+          <!-- Renderizado via JS -->
+        </div>
+      </div>
+    </div>
   </main>
 
   <script>
@@ -793,6 +924,360 @@ print(response.choices[0].message.content)
       localStorage.setItem('veroroute_searx_url', url);
       alert('URL do SearXNG configurada localmente! Para torná-la global, defina SEARXNG_URL no .dev.vars.');
     }
+
+    // ============ ADMINISTRACAO ============
+    async function loadAdmin() {
+      const statusEl = document.getElementById('admin-status');
+      if (statusEl) statusEl.innerText = 'Carregando...';
+      try {
+        const res = await fetch('/api/admin/config');
+        if (!res.ok) {
+          const err = await res.text();
+          if (statusEl) statusEl.innerText = 'Erro: ' + err;
+          return;
+        }
+        const data = await res.json();
+        renderAdminProviders(data.providers || []);
+        if (statusEl) statusEl.innerText = data.providers.length + ' provedores carregados';
+      } catch (e) {
+        if (statusEl) statusEl.innerText = 'Erro: ' + e.message;
+      }
+      loadPresets();
+      loadSearchConfig();
+      loadVirtualKeys();
+    }
+
+    function renderAdminProviders(providers) {
+      const grid = document.getElementById('admin-provider-grid');
+      if (!grid) return;
+      grid.innerHTML = '';
+      providers.forEach(function(p) {
+        const box = document.createElement('div');
+        box.className = 'provider-box';
+        box.innerHTML =
+          '<div class="provider-header">' +
+            '<span class="provider-name">' + escapeHtml(p.name) + '</span>' +
+            '<span class="status-dot" style="background:' + (p.enabled ? 'var(--emerald)' : 'var(--rose)') + ';box-shadow:0 0 8px ' + (p.enabled ? 'var(--emerald)' : 'var(--rose)') + '"></span>' +
+          '</div>' +
+          '<span style="font-size:0.78rem; color: var(--text-muted);">' + (p.isBuiltIn ? 'Embutido' : 'Customizado') + ' · ' + (p.protocol || 'openai') + '</span>' +
+          '<span style="font-size:0.75rem; color: var(--primary); word-break:break-all;">Modelos: ' + (p.models || []).join(', ') + '</span>' +
+          '<span style="font-size:0.75rem; color: var(--text-muted);">Chaves: ' + (p.keys ? p.keys.length : 0) + '</span>' +
+          '<div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-top:0.5rem;">' +
+            '<button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem;" onclick="toggleProvider(&apos;' + escapeHtml(p.id) + '&apos;,' + (p.enabled ? 'false' : 'true') + ')">' + (p.enabled ? 'Desativar' : 'Ativar') + '</button>' +
+            '<button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem;" onclick="addKey(&apos;' + escapeHtml(p.id) + '&apos;)">+ Chave</button>' +
+            '<button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem;" onclick="addModel(&apos;' + escapeHtml(p.id) + '&apos;)">+ Modelo</button>' +
+            (!p.isBuiltIn ? '<button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem; background:rgba(244,63,94,0.15);" onclick="deleteCustomProvider(&apos;' + escapeHtml(p.id) + '&apos;)">Excluir</button>' : '') +
+          '</div>';
+        grid.appendChild(box);
+      });
+    }
+
+    async function toggleProvider(id, enabled) {
+      try {
+        const res = await fetch('/api/admin/providers/' + id + '/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: enabled })
+        });
+        const data = await res.json();
+        loadAdmin();
+        alert(data.ok ? 'Provedor atualizado!' : 'Erro: ' + JSON.stringify(data.error || data));
+      } catch (e) { alert('Erro: ' + e.message); }
+    }
+
+    async function addKey(id) {
+      const key = prompt('Digite a chave de API a adicionar (para pool de balanceamento):');
+      if (!key) return;
+      try {
+        const res = await fetch('/api/admin/providers/' + id + '/keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keys: [key] })
+        });
+        const data = await res.json();
+        loadAdmin();
+        alert(data.ok ? 'Chave adicionada! Pool atual: ' + data.keys.length : 'Erro: ' + JSON.stringify(data.error || data));
+      } catch (e) { alert('Erro: ' + e.message); }
+    }
+
+    async function addModel(id) {
+      const model = prompt('Digite o nome do modelo a adicionar:');
+      if (!model) return;
+      try {
+        const res = await fetch('/api/admin/providers/' + id + '/models', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: model })
+        });
+        const data = await res.json();
+        loadAdmin();
+        alert(data.ok ? 'Modelo adicionado!' : 'Erro: ' + JSON.stringify(data.error || data));
+      } catch (e) { alert('Erro: ' + e.message); }
+    }
+
+    async function removeModel(id, model) {
+      try {
+        const res = await fetch('/api/admin/providers/' + id + '/models', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: model })
+        });
+        const data = await res.json();
+        loadAdmin();
+        alert(data.ok ? 'Modelo excluído!' : 'Erro: ' + JSON.stringify(data.error || data));
+      } catch (e) { alert('Erro: ' + e.message); }
+    }
+
+    async function deleteCustomProvider(id) {
+      if (!confirm('Excluir o provedor customizado?')) return;
+      try {
+        const res = await fetch('/api/admin/providers/' + id, { method: 'DELETE' });
+        const data = await res.json();
+        loadAdmin();
+        alert(data.ok ? 'Provedor excluído!' : 'Erro: ' + JSON.stringify(data.error || data));
+      } catch (e) { alert('Erro: ' + e.message); }
+    }
+
+    async function addCustomProvider() {
+      const name = document.getElementById('acp-name').value.trim();
+      const baseUrl = document.getElementById('acp-baseurl').value.trim();
+      const protocol = document.getElementById('acp-protocol').value;
+      const keysStr = document.getElementById('acp-keys').value.trim();
+      const modelsStr = document.getElementById('acp-models').value.trim();
+      const costIn = parseFloat(document.getElementById('acp-costin').value || '0');
+      const freeTier = document.getElementById('acp-freetier').checked;
+      const supportsTools = document.getElementById('acp-tools').checked;
+      const supportsVision = document.getElementById('acp-vision').checked;
+
+      if (!name || !baseUrl) { alert('Preencha nome e Base URL'); return; }
+
+      const body = {
+        name: name,
+        baseUrl: baseUrl,
+        protocol: protocol,
+        apiKeys: keysStr ? keysStr.split(',').map(function(s){return s.trim();}).filter(Boolean) : [],
+        models: modelsStr ? modelsStr.split(',').map(function(s){return s.trim();}).filter(Boolean) : [],
+        costPerMillionInput: costIn,
+        freeTier: freeTier,
+        supportsStreaming: true,
+        supportsTools: supportsTools,
+        supportsVision: supportsVision
+      };
+
+      try {
+        const res = await fetch('/api/admin/providers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (data.ok) {
+          alert('Provedor adicionado! ID: ' + data.id);
+          loadAdmin();
+        } else {
+          alert('Erro: ' + JSON.stringify(data.error || data));
+        }
+      } catch (e) { alert('Erro: ' + e.message); }
+    }
+
+    async function searchAdminModels() {
+      const q = document.getElementById('adm-model-search').value.trim();
+      const target = document.getElementById('adm-model-results');
+      try {
+        const res = await fetch('/api/admin/models?q=' + encodeURIComponent(q));
+        const data = await res.json();
+        let html = '';
+        (data.models || []).forEach(function(m) {
+          html += '<div style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem; border-bottom:1px solid var(--card-border);">' +
+            '<span style="font-size:0.85rem;">' + escapeHtml(m.provider) + ' / <strong>' + escapeHtml(m.id) + '</strong></span>' +
+            '<span>' + (m.enabled ? '<span style="color:var(--emerald); font-size:0.75rem;">ativo</span>' : '<span style="color:var(--rose); font-size:0.75rem;">excluído</span>') + '</span>' +
+          '</div>';
+        });
+        target.innerHTML = html || 'Nenhum modelo encontrado.';
+      } catch (e) {
+        target.innerHTML = 'Erro: ' + e.message;
+      }
+    }
+
+    async function loadPresets() {
+      const grid = document.getElementById('admin-presets-grid');
+      if (!grid) return;
+      try {
+        const res = await fetch('/api/admin/presets');
+        const data = await res.json();
+        grid.innerHTML = '';
+        (data.presets || []).forEach(function(p) {
+          const box = document.createElement('div');
+          box.className = 'provider-box';
+          box.innerHTML =
+            '<div class="provider-header">' +
+              '<span class="provider-name">' + escapeHtml(p.name) + '</span>' +
+              '<span class="badge-edge">ELO #' + p.eloRank + '</span>' +
+            '</div>' +
+            '<span style="font-size:0.75rem; color:var(--text-muted);">' + escapeHtml(p.description) + '</span>' +
+            '<span style="font-size:0.75rem; color:var(--emerald);">' + escapeHtml(p.freeTierNotes) + '</span>' +
+            '<span style="font-size:0.72rem; color:var(--primary); word-break:break-all;">Modelos: ' + escapeHtml((p.recommendedModels || []).slice(0, 2).join(', ')) + '</span>' +
+            '<button class="btn btn-secondary" style="margin-top:0.5rem; padding:0.35rem 0.6rem; font-size:0.75rem;" onclick="applyPreset(&apos;' + escapeHtml(p.id) + '&apos;)">⚡ Usar Template</button>';
+          grid.appendChild(box);
+        });
+        window._presetsData = data.presets || [];
+      } catch (e) {
+        grid.innerHTML = '<span style="color:var(--rose);">Erro ao carregar templates: ' + e.message + '</span>';
+      }
+    }
+
+    function applyPreset(presetId) {
+      const p = (window._presetsData || []).find(function(x) { return x.id === presetId; });
+      if (!p) return;
+      document.getElementById('acp-name').value = p.name;
+      document.getElementById('acp-protocol').value = p.protocol;
+      document.getElementById('acp-baseurl').value = p.baseUrl;
+      document.getElementById('acp-models').value = (p.recommendedModels || []).join(',');
+      document.getElementById('acp-freetier').checked = true;
+      document.getElementById('acp-name').scrollIntoView({ behavior: 'smooth' });
+      document.getElementById('acp-keys').focus();
+    }
+
+    async function loadSearchConfig() {
+      try {
+        const res = await fetch('/api/admin/search');
+        const data = await res.json();
+        if (data.ok && data.searchConfig) {
+          const cfg = data.searchConfig;
+          if (cfg.engine) document.getElementById('adm-search-engine').value = cfg.engine;
+          if (cfg.searxngUrl) document.getElementById('adm-search-searx').value = cfg.searxngUrl;
+          if (cfg.serperApiKey) document.getElementById('adm-search-serper').value = cfg.serperApiKey;
+          if (cfg.braveApiKey) document.getElementById('adm-search-brave').value = cfg.braveApiKey;
+          if (cfg.tavilyApiKey) document.getElementById('adm-search-tavily').value = cfg.tavilyApiKey;
+        }
+      } catch (e) {
+        console.error('Erro ao carregar config de busca', e);
+      }
+    }
+
+    async function saveSearchConfig() {
+      const engine = document.getElementById('adm-search-engine').value;
+      const searxngUrl = document.getElementById('adm-search-searx').value.trim();
+      const serperApiKey = document.getElementById('adm-search-serper').value.trim();
+      const braveApiKey = document.getElementById('adm-search-brave').value.trim();
+      const tavilyApiKey = document.getElementById('adm-search-tavily').value.trim();
+
+      try {
+        const res = await fetch('/api/admin/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ engine, searxngUrl, serperApiKey, braveApiKey, tavilyApiKey })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          alert('Configurações de busca salvas com sucesso no KV!');
+        } else {
+          alert('Erro ao salvar: ' + JSON.stringify(data));
+        }
+      } catch (e) {
+        alert('Erro: ' + e.message);
+      }
+    }
+
+    async function testSearch() {
+      const q = document.getElementById('adm-search-test-query').value.trim();
+      const resEl = document.getElementById('adm-search-test-result');
+      if (!q) return alert('Digite uma consulta para testar');
+      resEl.innerHTML = 'Buscando nos motores configurados...';
+      try {
+        const res = await fetch('/api/admin/search/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: q })
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          resEl.innerHTML = '<span style="color:var(--rose);">Erro: ' + escapeHtml(data.error || 'Falha na busca') + '</span>';
+          return;
+        }
+        let html = '<div style="color:var(--emerald); font-weight:600; margin-bottom:0.4rem;">Motor: ' + escapeHtml(data.engine) + ' (' + (data.results || []).length + ' resultados)</div>';
+        (data.results || []).forEach(function(r) {
+          html += '<div style="margin-bottom:0.5rem; padding:0.4rem; background:rgba(255,255,255,0.03); border-radius:6px;">' +
+            '<a href="' + escapeHtml(r.url) + '" target="_blank" style="color:var(--primary); font-weight:600; text-decoration:none;">' + escapeHtml(r.title) + '</a>' +
+            '<p style="margin:0.2rem 0 0 0; font-size:0.75rem; color:var(--text-muted);">' + escapeHtml(r.snippet) + '</p>' +
+          '</div>';
+        });
+        resEl.innerHTML = html || 'Nenhum resultado retornado.';
+      } catch (e) {
+        resEl.innerHTML = '<span style="color:var(--rose);">Erro: ' + escapeHtml(e.message) + '</span>';
+      }
+    }
+
+    async function loadVirtualKeys() {
+      const list = document.getElementById('adm-vkey-list');
+      if (!list) return;
+      try {
+        const res = await fetch('/api/admin/virtual-keys');
+        const data = await res.json();
+        list.innerHTML = '';
+        if (!data.keys || data.keys.length === 0) {
+          list.innerHTML = '<span style="color:var(--text-muted); font-size:0.85rem;">Nenhuma chave virtual criada ainda. Chaves criadas aqui funcionam como Bearer token em clientes Cursor, Cline e Claude Code.</span>';
+          return;
+        }
+        data.keys.forEach(function(k) {
+          const item = document.createElement('div');
+          item.style = 'display:flex; justify-content:space-between; align-items:center; padding:0.6rem 0.8rem; background:rgba(255,255,255,0.03); border:1px solid var(--card-border); border-radius:8px;';
+          item.innerHTML =
+            '<div>' +
+              '<div style="font-weight:600; font-size:0.85rem;">' + escapeHtml(k.name) + ' <span style="font-family:monospace; color:var(--primary); font-size:0.8rem; margin-left:0.5rem;">' + escapeHtml(k.key) + '</span></div>' +
+              '<div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem;">Requisições: <strong>' + (k.requestsCount || 0) + '</strong> · Criada em: ' + escapeHtml(k.createdAt ? k.createdAt.substring(0, 10) : '') + '</div>' +
+            '</div>' +
+            '<button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem; background:rgba(244,63,94,0.15); color:var(--rose);" onclick="deleteVirtualKey(&apos;' + escapeHtml(k.id) + '&apos;)">Revogar</button>';
+          list.appendChild(item);
+        });
+      } catch (e) {
+        list.innerHTML = '<span style="color:var(--rose);">Erro ao carregar chaves: ' + e.message + '</span>';
+      }
+    }
+
+    async function createVirtualKey() {
+      const name = document.getElementById('adm-vkey-name').value.trim();
+      if (!name) return alert('Informe o nome do cliente ou IDE');
+      try {
+        const res = await fetch('/api/admin/virtual-keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name })
+        });
+        const data = await res.json();
+        if (data.ok && data.key) {
+          document.getElementById('adm-vkey-name').value = '';
+          loadVirtualKeys();
+          alert('Chave virtual criada com sucesso!\\n\\nChave: ' + data.key.key + '\\n\\nCopie e configure no seu Cursor/Cline/Claude Code.');
+        } else {
+          alert('Erro ao criar chave: ' + JSON.stringify(data));
+        }
+      } catch (e) {
+        alert('Erro: ' + e.message);
+      }
+    }
+
+    async function deleteVirtualKey(id) {
+      if (!confirm('Revogar esta chave virtual permanentemente? Clientes que a utilizam perderão o acesso.')) return;
+      try {
+        const res = await fetch('/api/admin/virtual-keys/' + id, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.ok) {
+          loadVirtualKeys();
+        } else {
+          alert('Erro ao revogar chave: ' + JSON.stringify(data));
+        }
+      } catch (e) {
+        alert('Erro: ' + e.message);
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    loadAdmin();
   </script>
 </body>
 </html>`;

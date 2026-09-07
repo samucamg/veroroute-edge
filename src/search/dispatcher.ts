@@ -1,60 +1,87 @@
 import { searchWithDuckDuckGo } from "./duckduckgo";
 import { searchWithSearXNG } from "./searxng";
 import { searchWithTavily } from "./tavily";
+import { searchWithSerper } from "./serper";
+import { searchWithBrave } from "./brave";
+import { getAdminConfig } from "@/admin/store";
 import type { SearchRequest, SearchResponse, SearchResultItem } from "@/types/search";
 import type { ChatCompletionRequest } from "@/types/openai";
 import type { EnvBindings } from "@/types/provider";
 
 /**
- * Despacha busca com cascata inteligente:
- * Se houver SEARXNG_URL configurada pelo usuário ➔ usa SearXNG.
- * Se não houver ou falhar ➔ usa DuckDuckGo (sem chave, 100% gratuito) ➔ Tavily.
+ * Despacha busca com cascata inteligente dinâmica:
+ * 1. Consulta preferências e credenciais em AdminConfig (KV OMNI_KEYS).
+ * 2. Suporta SearXNG, Tavily, Google Serper, Brave Search e fallback universal DuckDuckGo (100% gratuito e sem chave).
  */
 export async function dispatchSearch(
   req: SearchRequest,
   env: EnvBindings
 ): Promise<SearchResponse> {
   const startTime = Date.now();
-  const requestedProvider = req.provider || "auto";
+  const adminCfg = await getAdminConfig(env);
+  const searchCfg = adminCfg.searchConfig;
+
+  // Provedor solicitado no request ou o configurado como padrão no painel
+  const requestedProvider = req.provider || searchCfg.activeProvider || "auto";
 
   let results: SearchResultItem[] = [];
   let usedProvider = requestedProvider;
 
-  // 1. SearXNG (Apenas se a URL tiver sido configurada pelo usuário)
-  const userSearxUrl = env.SEARXNG_URL?.trim();
+  // 1. SearXNG (Se configurado no KV ou no env)
+  const searxUrl = searchCfg.searxngUrl?.trim() || env.SEARXNG_URL?.trim();
   if (
-    userSearxUrl &&
-    userSearxUrl.length > 0 &&
+    searxUrl &&
+    searxUrl.length > 0 &&
     (requestedProvider === "auto" || requestedProvider === "searxng")
   ) {
     try {
-      results = await searchWithSearXNG(req, userSearxUrl);
+      results = await searchWithSearXNG(req, searxUrl);
       usedProvider = "searxng";
     } catch (err) {
-      console.warn("SearXNG customizado falhou ou indisponível, usando fallback DuckDuckGo...", err);
+      console.warn("SearXNG falhou ou indisponível, tentando próximo...", err);
     }
   }
 
-  // 2. DuckDuckGo (Sempre disponível, sem custo e sem chave)
+  // 2. Google Serper (2.500 buscas grátis)
+  const serperKey = searchCfg.serperApiKey?.trim() || (env as any).SERPER_API_KEY?.trim();
+  if (results.length === 0 && serperKey && (requestedProvider === "auto" || requestedProvider === "serper")) {
+    try {
+      results = await searchWithSerper(req, serperKey);
+      usedProvider = "serper";
+    } catch (err) {
+      console.warn("Google Serper falhou:", err);
+    }
+  }
+
+  // 3. Brave Search (2.000 buscas/mês grátis)
+  const braveKey = searchCfg.braveApiKey?.trim() || (env as any).BRAVE_SEARCH_API_KEY?.trim();
+  if (results.length === 0 && braveKey && (requestedProvider === "auto" || requestedProvider === "brave")) {
+    try {
+      results = await searchWithBrave(req, braveKey);
+      usedProvider = "brave";
+    } catch (err) {
+      console.warn("Brave Search falhou:", err);
+    }
+  }
+
+  // 4. Tavily Search (1.000 buscas/mês grátis)
+  const tavilyKey = searchCfg.tavilyApiKey?.trim() || env.TAVILY_API_KEYS?.split(",")[0]?.trim();
+  if (results.length === 0 && tavilyKey && (requestedProvider === "auto" || requestedProvider === "tavily")) {
+    try {
+      results = await searchWithTavily(req, tavilyKey);
+      usedProvider = "tavily";
+    } catch (err) {
+      console.warn("Tavily falhou:", err);
+    }
+  }
+
+  // 5. DuckDuckGo (Fallback universal $0, sem cadastro, sem chave)
   if (results.length === 0 && (requestedProvider === "auto" || requestedProvider === "duckduckgo")) {
     try {
       results = await searchWithDuckDuckGo(req);
       usedProvider = "duckduckgo";
     } catch (err) {
-      console.warn("DuckDuckGo falhou, tentando fallback Tavily...", err);
-    }
-  }
-
-  // 3. Tavily (Se configurado chave no ambiente)
-  if (results.length === 0 && (requestedProvider === "auto" || requestedProvider === "tavily")) {
-    const tavilyKey = env.TAVILY_API_KEYS?.split(",")[0]?.trim();
-    if (tavilyKey) {
-      try {
-        results = await searchWithTavily(req, tavilyKey);
-        usedProvider = "tavily";
-      } catch (err) {
-        console.warn("Tavily falhou:", err);
-      }
+      console.warn("DuckDuckGo falhou:", err);
     }
   }
 

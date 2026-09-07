@@ -15,6 +15,7 @@ import {
 } from "./oauth/antigravity";
 import { executeMcpTool, handleMcpSse, MCP_TOOLS_LIST } from "./mcp/server";
 import { renderDashboardHtml } from "./ui/dashboard";
+import { adminRouter } from "./admin/routes";
 import type { AnthropicMessagesRequest } from "./types/anthropic";
 import type { ChatCompletionRequest, ChatCompletionResponse } from "./types/openai";
 import type { EnvBindings } from "./types/provider";
@@ -33,16 +34,42 @@ app.use(
   })
 );
 
-// Middleware de Autenticação (Opcional se AUTH_TOKEN estiver configurado)
+import { getAdminConfig, mutateAdminConfig } from "./admin/store";
+
+// Middleware de Autenticação (Suporta AUTH_TOKEN mestre e chaves virtuais sk-vr-...)
 app.use("/v1/*", async (c, next) => {
   const authToken = c.env.AUTH_TOKEN;
-  if (authToken) {
-    const authHeader = c.req.header("Authorization") || "";
-    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-    if (token !== authToken) {
-      return c.json({ error: { message: "Não autorizado (AUTH_TOKEN inválido)", status: 401 } }, 401);
+  const authHeader = c.req.header("Authorization") || "";
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+
+  // 1. Se coincidir com o AUTH_TOKEN mestre
+  if (authToken && token === authToken) {
+    return await next();
+  }
+
+  // 2. Se for uma chave virtual gerenciada no KV
+  if (token.startsWith("sk-vr-")) {
+    const adminCfg = await getAdminConfig(c.env);
+    const vKey = adminCfg.virtualKeys?.[token];
+    if (vKey && vKey.enabled) {
+      // Persiste o incremento de requisições de forma assíncrona (non-blocking)
+      c.executionCtx.waitUntil(
+        mutateAdminConfig(c.env, (cfg) => {
+          if (cfg.virtualKeys[token]) {
+            cfg.virtualKeys[token].totalRequests = (cfg.virtualKeys[token].totalRequests || 0) + 1;
+            cfg.virtualKeys[token].lastUsedAt = new Date().toISOString();
+          }
+        })
+      );
+      return await next();
     }
   }
+
+  // 3. Se AUTH_TOKEN estiver ativo e nenhuma chave válida for fornecida
+  if (authToken) {
+    return c.json({ error: { message: "Não autorizado (chave de API inválida ou revogada)", status: 401 } }, 401);
+  }
+
   await next();
 });
 
@@ -313,5 +340,7 @@ app.post("/api/mcp/messages", async (c) => {
   }
   return c.json({ jsonrpc: "2.0", id: body.id, result: {} });
 });
+
+app.route("/api/admin", adminRouter);
 
 export default app;

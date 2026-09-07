@@ -1,4 +1,4 @@
-import { PROVIDER_REGISTRY } from "@/config/providers";
+import { getProviderConfig, PROVIDER_REGISTRY } from "@/config/providers";
 import { formatGeminiSSEChunkToOpenAI, formatGeminiToOpenAI, formatOpenAIToGemini } from "./gemini";
 import type { ChatCompletionRequest } from "@/types/openai";
 
@@ -11,7 +11,7 @@ export async function executeOpenAICompatible(
   apiKey: string,
   modelName: string
 ): Promise<Response> {
-  const provider = PROVIDER_REGISTRY[providerId];
+  const provider = getProviderConfig(providerId);
   if (!provider) {
     throw new Error(`Provedor desconhecido: ${providerId}`);
   }

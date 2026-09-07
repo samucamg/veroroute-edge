@@ -243,3 +243,29 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     supportsVision: false,
   },
 };
+
+
+
+// Registry mutável para provedores customizados registrados via painel admin
+export const CUSTOM_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {};
+
+export function registerCustomProvider(id: string, cfg: Partial<ProviderConfig> & { baseUrl: string }): void {
+  CUSTOM_PROVIDER_REGISTRY[id] = {
+    id,
+    name: cfg.name || id,
+    baseUrl: cfg.baseUrl,
+    authType: cfg.authType || "bearer",
+    headerName: cfg.headerName,
+    models: cfg.models || [],
+    freeTier: cfg.freeTier ?? true,
+    costPerMillionInput: cfg.costPerMillionInput ?? 0,
+    costPerMillionOutput: cfg.costPerMillionOutput ?? 0,
+    supportsStreaming: cfg.supportsStreaming ?? true,
+    supportsTools: cfg.supportsTools ?? true,
+    supportsVision: cfg.supportsVision ?? false,
+  } as ProviderConfig;
+}
+
+export function getProviderConfig(id: string): ProviderConfig | undefined {
+  return PROVIDER_REGISTRY[id] || CUSTOM_PROVIDER_REGISTRY[id];
+}

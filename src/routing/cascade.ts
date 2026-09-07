@@ -5,6 +5,8 @@ import { executeOneMinAI } from "@/adapters/onemin";
 import { executeOpenAICompatible } from "@/adapters/openai-compatible";
 import { getValidAntigravityAccessToken } from "@/oauth/antigravity";
 import { markKeyRateLimited, selectActiveKey } from "./keyPool";
+import { getAdminConfig } from "@/admin/store";
+import { registerCustomProvider } from "@/config/providers";
 import { evaluateQuotaShare, recordQuotaShareUsage } from "./quotaShare";
 import { applyRoutingStrategy, recordCandidateSuccess, type TargetCandidate } from "./strategies";
 import type { ChatCompletionRequest } from "@/types/openai";
@@ -85,15 +87,76 @@ export function resolveCandidates(request: ChatCompletionRequest): TargetCandida
 }
 
 /**
+ * Aplica regras de administração na lista de candidatos do roteamento:
+ *  - Prioriza provedores customizados quando o modelo usa o prefixo <id>/
+ *  - Filtra provedores desabilitados no painel de administração
+ *  - Remove modelos excluídos individualmente
+ */
+async function applyAdminRouting(
+  ordered: TargetCandidate[],
+  request: ChatCompletionRequest,
+  env: EnvBindings
+): Promise<TargetCandidate[]> {
+  const cfg = await getAdminConfig(env);
+  const customIds = new Set(Object.keys(cfg.customProviders));
+  let candidates = [...ordered];
+
+  // 1. Se o modelo usar prefixo de provedor customizado, prioriza esse provedor
+  const model = request.model || "";
+  const slashIdx = model.indexOf("/");
+  const colonIdx = model.indexOf(":");
+  let prefix = "";
+  if (slashIdx > 0) prefix = model.slice(0, slashIdx);
+  else if (colonIdx > 0) prefix = model.slice(0, colonIdx);
+
+  if (prefix && customIds.has(prefix) && !candidates.some((c) => c.provider === prefix)) {
+    candidates.unshift({ provider: prefix, model });
+  }
+
+  // 2. Filtra provedores desabilitados no painel de administração
+  candidates = candidates.filter((cand) => {
+    if (customIds.has(cand.provider)) return true; // custom sempre ativo
+    const state = cfg.providerStates[cand.provider]?.enabled;
+    return state !== false; // sem estado explícito => habilitado
+  });
+
+  // 3. Remove modelos marcados como excluídos individualmente
+  candidates = candidates.filter((cand) => {
+    const modelKey = cand.provider + "/" + cand.model;
+    return cfg.modelStates[modelKey]?.enabled !== false;
+  });
+
+  return candidates;
+}
+
+/**
  * Orquestra a execução da requisição com cascata de auto-fallback e balanceamento
  */
 export async function dispatchWithCascade(
   request: ChatCompletionRequest,
   env: EnvBindings
 ): Promise<Response> {
+  const adminCfg = await getAdminConfig(env);
+  // Registra provedores customizados do painel admin
+  for (const [pid, cp] of Object.entries(adminCfg.customProviders)) {
+    registerCustomProvider(pid, {
+      name: cp.name,
+      baseUrl: cp.baseUrl,
+      authType: "bearer",
+      models: cp.models,
+      freeTier: cp.freeTier,
+      supportsStreaming: cp.supportsStreaming,
+      supportsTools: cp.supportsTools,
+      supportsVision: cp.supportsVision,
+    });
+  }
   const initialCandidates = resolveCandidates(request);
   const strategy = request.routing_strategy || env.DEFAULT_ROUTING_STRATEGY || "priority";
-  const orderedCandidates = applyRoutingStrategy(initialCandidates, strategy, request.user);
+  const orderedCandidates = await applyAdminRouting(
+    applyRoutingStrategy(initialCandidates, strategy, request.user),
+    request,
+    env
+  );
 
   // Verificação opcional de Quota Sharing (Compartilhamento de Cota)
   if (env.ENABLE_QUOTA_SHARING === "true" && request.user) {
@@ -135,6 +198,16 @@ export async function dispatchWithCascade(
       // 4. Provedores padrão (OpenAI, Gemini, Groq, Cerebras, Alibaba, Azure, Bedrock, etc.)
       else {
         const apiKey = await selectActiveKey(env, candidate.provider);
+        if (!apiKey && candidate.provider !== "pollinations") {
+          errors.push({
+            provider: candidate.provider,
+            model: candidate.model,
+            status: 401,
+            message: `Sem chave de API configurada para o provedor ${candidate.provider}. Pulando para fallback...`,
+          });
+          continue;
+        }
+
         response = await executeOpenAICompatible(request, candidate.provider, apiKey, candidate.model);
 
         if (response.status === 429) {
@@ -151,8 +224,13 @@ export async function dispatchWithCascade(
         return response;
       }
 
-      // Se foi erro transitório (429, 500, 502, 503, 504), tenta o próximo candidato
-      if (response.status === 429 || (response.status >= 500 && response.status <= 504)) {
+      // Se foi erro de cota (429), erro de credencial (401, 403) ou erro do servidor (500-504), tenta o próximo candidato
+      if (
+        response.status === 429 ||
+        response.status === 401 ||
+        response.status === 403 ||
+        (response.status >= 500 && response.status <= 504)
+      ) {
         const errBody = await response.clone().text().catch(() => "");
         errors.push({
           provider: candidate.provider,

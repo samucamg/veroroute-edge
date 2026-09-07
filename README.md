@@ -144,12 +144,41 @@ docker compose up -d
 2. Name the stack: `searxng-gateway`.
 3. Copy and paste the contents of [`deploy/searxng/portainer-stack.yml`](deploy/searxng/portainer-stack.yml).
 4. Click **Deploy the stack**.
-5. In your Cloudflare Worker, set:
-   ```ini
-   SEARXNG_URL=http://YOUR_SERVER_IP:8080
+5. In your Cloudflare Worker, set the public environment variable (`wrangler.jsonc` `vars` or Dashboard ➔ Settings ➔ Variables):
+   ```jsonc
+   "SEARXNG_URL": "http://YOUR_SERVER_IP:8080"
    ```
+   *(This is a public open URL variable, not a secret key).*
 
 ---
+
+---
+
+## ⚙️ Environment Variables & Secrets
+
+> 💡 **All API keys and secrets are 100% optional!**
+> You do **NOT** need to configure every provider. Providing just **one single API key** is enough (or none at all, relying on the built-in **free Cloudflare Workers AI** and **DuckDuckGo HTML search**). The gateway automatically routes and falls back across whichever providers you configure.
+
+### 🔒 Secrets & API Keys (`.dev.vars` / Cloudflare Secrets)
+*Set only what you plan to use:*
+| Secret / Key | Required? | Description |
+|---|:---:|---|
+| **`AUTH_TOKEN`** | Optional | Master bearer token to protect your gateway. Leave blank for open access. |
+| **`GEMINI_API_KEYS`** | Optional | Google Gemini API keys (comma-separated for pool rotation). |
+| **`GROQ_API_KEYS`** | Optional | Groq Cloud API keys for ultra-fast Llama 3.3. |
+| **`CEREBRAS_API_KEYS`** | Optional | Cerebras Cloud API keys (2,000+ tokens/s). |
+| **`OPENAI_API_KEYS`** | Optional | Official OpenAI keys for GPT or audio fallbacks. |
+| **`TAVILY_API_KEYS`** | Optional | Tavily web search API key (1,000 free queries/month). |
+
+### 🌐 Open Variables (`wrangler.jsonc` `vars` — Public Text)
+*SearXNG URL is a **public variable** (not a secret):*
+| Variable | Default | Description |
+|---|---|---|
+| **`SEARXNG_URL`** | `""` (empty) | URL of your self-hosted SearXNG (e.g. `http://your-server-ip:8080`). Empty = auto DuckDuckGo ($0 free). |
+| **`DEFAULT_ROUTING_STRATEGY`** | `priority` | Routing strategy (`priority`, `round-robin`, `p2c`, etc.). |
+| **`ENABLE_MODALITY_BRIDGE`** | `true` | Automatic vision-to-text bridge via Gemini / Workers AI. |
+| **`ENABLE_CONTEXT_COMPRESSION`** | `true` | Token saver: message deduplication and terminal log cleanup. |
+| **`ENABLE_JINA_READER`** | `true` | Clean Markdown web fetcher via `r.jina.ai` ($0 free). |
 
 <a id="portugues"></a>
 # 🇧🇷 Português
@@ -228,10 +257,11 @@ docker compose up -d
 2. Nomeie a stack como: `searxng-gateway`.
 3. Copie e cole o conteúdo de [`deploy/searxng/portainer-stack.yml`](deploy/searxng/portainer-stack.yml).
 4. Clique em **Deploy the stack**.
-5. No seu Worker, defina a variável:
-   ```ini
-   SEARXNG_URL=http://IP_DO_SEU_SERVIDOR:8080
+5. No seu Worker, adicione a URL como **variável pública** (`wrangler.jsonc` `vars` ou Settings ➔ Variables no painel):
+   ```jsonc
+   "SEARXNG_URL": "http://IP_DO_SEU_SERVIDOR:8080"
    ```
+   *(Não precisa ser segredo; é apenas a URL HTTP do seu buscador).*
 
 ---
 
@@ -247,26 +277,29 @@ docker compose up -d
 
 ## ⚙️ Variáveis de Ambiente e Segredos
 
-### 🔒 Segredos (`.dev.vars` / Cloudflare Secrets)
-```ini
-AUTH_TOKEN=seu-token-mestre-privado
-GEMINI_API_KEYS=AIza...,AIza...
-GROQ_API_KEYS=gsk_...
-CEREBRAS_API_KEYS=csk-...
-OPENAI_API_KEYS=sk-...
-TAVILY_API_KEYS=tvly-...
-```
+> 💡 **Todas as chaves de API e segredos são 100% opcionais!**
+> Você **NÃO** precisa preencher todas as chaves de API. Configure apenas **uma única chave** do provedor que desejar (ou nenhuma, utilizando o **Cloudflare Workers AI nativo gratuito** e o **DuckDuckGo** que funcionam sem chave alguma). O gateway direciona e faz fallback automaticamente para os provedores configurados.
 
-### 🌐 Variáveis de Configuração (`wrangler.jsonc` `vars`)
-```jsonc
-"vars": {
-  "DEFAULT_ROUTING_STRATEGY": "priority",
-  "SEARXNG_URL": "http://seu-ip:8080",
-  "ENABLE_MODALITY_BRIDGE": "true",
-  "ENABLE_CONTEXT_COMPRESSION": "true",
-  "ENABLE_JINA_READER": "true"
-}
-```
+### 🔒 Segredos e Chaves (`.dev.vars` / Cloudflare Secrets)
+*Adicione apenas o que você for utilizar:*
+| Chave / Segredo | Obrigatório? | Descrição |
+|---|:---:|---|
+| **`AUTH_TOKEN`** | Opcional | Senha mestra para proteger o seu gateway. Se vazio, o acesso fica público. |
+| **`GEMINI_API_KEYS`** | Opcional | Chaves do Google Gemini (AI Studio). Múltiplas chaves separadas por vírgula. |
+| **`GROQ_API_KEYS`** | Opcional | Chaves da Groq Cloud para modelos ultrarrápidos (Llama 3.3). |
+| **`CEREBRAS_API_KEYS`** | Opcional | Chaves da Cerebras Cloud (> 2.000 t/s). |
+| **`OPENAI_API_KEYS`** | Opcional | Chaves oficiais da OpenAI para fallback de áudio/TTS ou GPT. |
+| **`TAVILY_API_KEYS`** | Opcional | Chave de busca web da Tavily (1.000 buscas/mês grátis). |
+
+### 🌐 Variáveis Públicas de Ambiente (`wrangler.jsonc` `vars` — Texto Aberto)
+*A URL do SearXNG é uma **variável pública** (não é segredo/chave). Configure apenas se tiver uma instância própria:*
+| Variável | Padrão | Descrição |
+|---|---|---|
+| **`SEARXNG_URL`** | `""` (vazio) | URL da sua instância SearXNG (ex: `http://seu-ip:8080`). Se deixar vazio, usa **DuckDuckGo HTML gratuito ($0 sem chave)**. |
+| **`DEFAULT_ROUTING_STRATEGY`** | `priority` | Estratégia de balanceamento (`priority`, `round-robin`, `p2c`, etc.). |
+| **`ENABLE_MODALITY_BRIDGE`** | `true` | Transcreve imagens para texto em modelos text-only via Gemini/Workers AI. |
+| **`ENABLE_CONTEXT_COMPRESSION`** | `true` | Ativa deduplicação e limpeza de logs de terminal para economia de tokens. |
+| **`ENABLE_JINA_READER`** | `true` | Ativa extração de páginas web em Markdown limpo via `r.jina.ai` ($0 grátis). |
 
 ---
 

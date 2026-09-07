@@ -1,35 +1,24 @@
-# VeroRoute Edge - Chaves de API e Segredos (.dev.vars)
-# Renomeie para .dev.vars para uso local no `wrangler dev`
-# Para deploy de produção, configure via `wrangler secret put NOME_DA_VARIAVEL`
+# ==============================================================================
+# VeroRoute Edge - Local Environment Variables (.dev.vars)
+# ==============================================================================
+# 💡 NOTA IMPORTANTE:
+# TODAS as chaves de API e segredos são 100% OPCIONAIS!
+# Você NÃO precisa preencher tudo. Basta configurar UMA ÚNICA chave que você
+# possua (ex: só GEMINI_API_KEYS ou só GROQ_API_KEYS).
+# Se não preencher nenhuma, o gateway opera via Cloudflare Workers AI nativo ($0).
+# ==============================================================================
 
-# Senha mestra de acesso ao VeroRoute Edge (Opcional - deixe vazio para acesso livre)
-AUTH_TOKEN=
+# Token mestre para autenticar seus clientes no gateway (Bearer token)
+# Deixe vazio se quiser acesso livre sem autenticação
+AUTH_TOKEN=seu-token-mestre-privado
 
-# Provedores Oficiais e Corporativos
-OPENAI_API_KEYS=sk-proj-...
-ALIBABA_API_KEYS=sk-...
-ONE_MIN_API_KEYS=
-FREEAPIKEY_KEYS=
-AZURE_OPENAI_API_KEYS=
-BEDROCK_API_KEYS=
+# --- Provedores LLM (Preencha apenas o que for usar) ---
+# Dica: aceite múltiplas chaves separadas por vírgula para round-robin automático
+GEMINI_API_KEYS=
+GROQ_API_KEYS=
+CEREBRAS_API_KEYS=
+OPENAI_API_KEYS=
 
-# Provedores Gratuitos de Alta Capacidade (Pool com rotação por vírgula)
-GEMINI_API_KEYS=AIzaSy...1,AIzaSy...2
-GROQ_API_KEYS=gsk_...
-CEREBRAS_API_KEYS=csk-...
-SAMBANOVA_API_KEYS=
-MISTRAL_API_KEYS=
-OPENROUTER_API_KEYS=sk-or-...
-DEEPSEEK_API_KEYS=sk-...
-
-# Provedor Antigravity / Google Cloud Code Assist (OAuth & Tokens)
-# Deixe vazio para usar o fluxo OAuth integrado via navegador ou cole aqui seu refresh token:
-ANTIGRAVITY_REFRESH_TOKEN=
-ANTIGRAVITY_PROJECT_ID=
-
-# Provedores de Busca Web (Search & RAG)
-# Coloque a URL da sua própria instância SearXNG (ex: https://meusearxng.com). Deixe vazio para usar DuckDuckGo gratuito:
-SEARXNG_URL=
-TAVILY_API_KEYS=tvly-...
-SERPER_API_KEYS=
-FIRECRAWL_API_KEYS=
+# --- Busca Web Paga Opcional ---
+# Deixe vazio para usar DuckDuckGo HTML gratuito ($0 sem chave) ou SearXNG
+TAVILY_API_KEYS=

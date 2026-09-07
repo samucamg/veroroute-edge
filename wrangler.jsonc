@@ -14,11 +14,11 @@
   "kv_namespaces": [
     {
       "binding": "OMNI_CACHE",
-      "id": "OMNI_CACHE_ID"
+      "id": "bc7b2dd9bcb14181be1580c56d1ac12f"
     },
     {
       "binding": "OMNI_KEYS",
-      "id": "OMNI_KEYS_ID"
+      "id": "977429b93522435185128806296e7423"
     }
   ],
 
