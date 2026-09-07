@@ -1510,7 +1510,7 @@ dsh --model combo-super-payload
         showToast('Insira ao menos uma chave de API para salvar.', 'error');
         return;
       }
-      const keys = val.split(/[\n,]+/).map(function(s) { return s.trim(); }).filter(Boolean);
+      const keys = val.split(/[\\n,]+/).map(function(s) { return s.trim(); }).filter(Boolean);
       try {
         const res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/keys', {
           method: 'POST',
@@ -1787,8 +1787,8 @@ dsh --model combo-super-payload
         name: name,
         baseUrl: baseUrl,
         protocol: protocol,
-        apiKeys: keysStr ? keysStr.split(/[\n,]+/).map(function(s){return s.trim();}).filter(Boolean) : [],
-        models: modelsStr ? modelsStr.split(/[\n,]+/).map(function(s){return s.trim();}).filter(Boolean) : [],
+        apiKeys: keysStr ? keysStr.split(/[\\n,]+/).map(function(s){return s.trim();}).filter(Boolean) : [],
+        models: modelsStr ? modelsStr.split(/[\\n,]+/).map(function(s){return s.trim();}).filter(Boolean) : [],
         costPerMillionInput: costIn,
         freeTier: freeTier,
         supportsStreaming: true,
