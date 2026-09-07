@@ -47,7 +47,11 @@ adminRouter.get("/config", async (c) => {
 
   for (const [id, staticCfg] of Object.entries(PROVIDER_REGISTRY)) {
     const state = cfg.providerStates[id]?.enabled ?? true;
-    const customModels = cfg.customModels[id] || [];
+    const removed = new Set(cfg.removedModels?.[id] || []);
+    const customModels = (cfg.customModels[id] || []).filter((m) => !removed.has(m));
+    const baseModels = (staticCfg.models || []).filter((m) => !removed.has(m));
+    const mergedModels = [...baseModels, ...customModels.filter((m) => !baseModels.includes(m))];
+    const finalModels = mergedModels.filter((m) => cfg.modelStates[id + "/" + m]?.enabled !== false);
     const keys = await getCustomProviderKeys(c.env, id);
     providers.push({
       id,
@@ -57,7 +61,7 @@ adminRouter.get("/config", async (c) => {
       baseUrl: staticCfg.baseUrl || "",
       authType: staticCfg.authType,
       protocol: "openai",
-      models: [...(staticCfg.models || []), ...customModels.filter((m) => !(staticCfg.models || []).includes(m))],
+      models: finalModels,
       freeTier: staticCfg.freeTier,
       supportsStreaming: staticCfg.supportsStreaming,
       supportsTools: staticCfg.supportsTools,
@@ -69,6 +73,8 @@ adminRouter.get("/config", async (c) => {
 
   for (const [id, cp] of Object.entries(cfg.customProviders)) {
     const keys = await getCustomProviderKeys(c.env, id);
+    const removed = new Set(cfg.removedModels?.[id] || []);
+    const finalModels = (cp.models || []).filter((m) => !removed.has(m) && cfg.modelStates[id + "/" + m]?.enabled !== false);
     providers.push({
       id,
       name: cp.name,
@@ -77,7 +83,7 @@ adminRouter.get("/config", async (c) => {
       baseUrl: cp.baseUrl,
       authType: cp.protocol === "anthropic" ? "anthropic" : "bearer",
       protocol: cp.protocol,
-      models: cp.models,
+      models: finalModels,
       freeTier: cp.freeTier,
       supportsStreaming: cp.supportsStreaming,
       supportsTools: cp.supportsTools,
@@ -92,6 +98,7 @@ adminRouter.get("/config", async (c) => {
     providerStates: cfg.providerStates,
     modelStates: cfg.modelStates,
     customModels: cfg.customModels,
+    removedModels: cfg.removedModels || {},
     customProviders: Object.fromEntries(
       Object.entries(cfg.customProviders).map(([id, cp]) => [
         id,
@@ -192,6 +199,10 @@ adminRouter.post("/providers/:id/models", async (c) => {
     return c.json({ error: { message: "Nome do modelo é obrigatório", type: "validation" } }, 400);
   }
   const cfg = await mutateAdminConfig(c.env, (cfg) => {
+    if (!cfg.removedModels) cfg.removedModels = {};
+    if (cfg.removedModels[id]) {
+      cfg.removedModels[id] = cfg.removedModels[id].filter((m) => !modelsToAdd.includes(m));
+    }
     if (cfg.customProviders[id]) {
       const list = cfg.customProviders[id].models;
       for (const model of modelsToAdd) {
@@ -238,11 +249,27 @@ adminRouter.post("/providers/:id/fetch-models", async (c) => {
   let upstreamModels: string[] = [];
   let fetchError: string | null = null;
 
-  // Se tiver baseUrl e apiKey, tenta consultar a API do provedor
-  if (baseUrl && baseUrl !== "workers-ai" && !baseUrl.includes("cloudcode-pa.googleapis.com")) {
+  // Catálogo nativo Cloudflare Workers AI
+  if (id === "cloudflare-ai" || baseUrl === "workers-ai") {
+    upstreamModels = [
+      "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      "@cf/meta/llama-3.1-70b-instruct",
+      "@cf/meta/llama-3.1-8b-instruct",
+      "@cf/meta/llama-3-8b-instruct",
+      "@cf/qwen/qwen2.5-coder-32b-instruct",
+      "@cf/qwen/qwen2.5-72b-instruct",
+      "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+      "@cf/mistral/mistral-7b-instruct-v0.2",
+      "@cf/google/gemma-7b-it",
+      "@cf/google/gemma-2b-it",
+      "@cf/baai/bge-large-en-v1.5",
+      "@cf/baai/bge-small-en-v1.5",
+    ];
+  } else if (baseUrl && !baseUrl.includes("cloudcode-pa.googleapis.com")) {
+    // Consulta à API oficial upstream
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
       let url = baseUrl.replace(/\/+$/, "") + "/models";
       const headers: Record<string, string> = {
@@ -250,37 +277,67 @@ adminRouter.post("/providers/:id/fetch-models", async (c) => {
       };
 
       if (id === "gemini") {
-        url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+        if (apiKey) {
+          url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+        } else {
+          url = ""; // sem chave gemini, cai no catálogo
+        }
+      } else if (id === "openrouter" || id === "openrouter-free") {
+        url = "https://openrouter.ai/api/v1/models";
+        if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
       } else if (authType === "apikey-header") {
         headers[headerName] = apiKey || "";
       } else if (apiKey) {
         headers["Authorization"] = `Bearer ${apiKey}`;
       }
 
-      const res = await fetch(url, { headers, signal: controller.signal });
-      clearTimeout(timeoutId);
+      if (url) {
+        const res = await fetch(url, { headers, signal: controller.signal });
+        clearTimeout(timeoutId);
 
-      if (res.ok) {
-        const json = (await res.json()) as any;
-        const list = Array.isArray(json.data) ? json.data : (Array.isArray(json.models) ? json.models : []);
-        upstreamModels = list
-          .map((m: any) => (typeof m === "string" ? m : (m.id || m.name)))
-          .filter((m: any): m is string => Boolean(m))
-          .map((m: string) => m.replace(/^models\//, ""));
-      } else {
-        fetchError = `Upstream HTTP ${res.status}`;
+        if (res.ok) {
+          const json = (await res.json()) as any;
+          const list = Array.isArray(json.data) ? json.data : (Array.isArray(json.models) ? json.models : []);
+          let extracted = list
+            .map((m: any) => (typeof m === "string" ? m : (m.id || m.name)))
+            .filter((m: any): m is string => Boolean(m))
+            .map((m: string) => m.replace(/^models\//, ""));
+
+          if (id === "openrouter-free") {
+            // Filtra modelos com sufixo :free ou custo zero
+            const freeOnly = extracted.filter((m: string) => m.endsWith(":free"));
+            extracted = freeOnly.length > 0 ? freeOnly : extracted;
+          }
+          upstreamModels = extracted;
+        } else {
+          fetchError = `Upstream HTTP ${res.status}`;
+        }
       }
     } catch (err: any) {
-      fetchError = err.name === "AbortError" ? "Timeout ao consultar upstream (6s)" : (err.message || String(err));
+      fetchError = err.name === "AbortError" ? "Timeout ao consultar upstream (8s)" : (err.message || String(err));
     }
   }
 
-  // 2. Combinar com catálogo conhecido do provedor
+  // 2. Combinar com catálogo conhecido do provedor e fallbacks ricos
   const registryModels = prov?.models || [];
   const presetModels = preset?.models || [];
   const recommendedModels = preset?.recommendedModels || [];
-  const defaultCatModels = DEFAULT_MODELS_CATALOG.filter((m) => m.provider === id).map((m) => m.id);
+  const defaultCatModels = DEFAULT_MODELS_CATALOG
+    .filter((m) => m.provider === id || (id === "openrouter-free" && m.provider === "openrouter"))
+    .map((m) => m.id);
   const activeCustomModels = cfg.customModels[id] || [];
+
+  // Fallbacks específicos para garantir catálogo funcional se upstream estiver sem chave
+  const providerFallbacks: Record<string, string[]> = {
+    gemini: ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-pro-exp-02-05"],
+    groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen-2.5-coder-32b", "gemma2-9b-it", "mixtral-8x7b-32768", "deepseek-r1-distill-llama-70b"],
+    cerebras: ["llama3.3-70b", "llama3.1-8b", "llama3.1-70b"],
+    sambanova: ["Meta-Llama-3.3-70B-Instruct", "Qwen2.5-72B-Instruct", "Qwen2.5-Coder-32B-Instruct", "Llama-3.2-11B-Vision-Instruct", "DeepSeek-R1-Distill-Llama-70B"],
+    "openrouter-free": ["deepseek/deepseek-r1-0528:free", "deepseek/deepseek-chat-v3-0324:free", "meta-llama/llama-3.3-70b-instruct:free", "google/gemini-2.0-flash-exp:free", "qwen/qwen-2.5-coder-32b-instruct:free"],
+    mistral: ["mistral-large-latest", "mistral-small-latest", "codestral-latest", "pixtral-large-latest"],
+    alibaba: ["qwen-max", "qwen-plus", "qwen-turbo", "qwen2.5-coder-32b-instruct", "qwen2.5-72b-instruct"],
+  };
+  const fallbacks = providerFallbacks[id] || [];
 
   // Combina sem duplicatas
   const allAvailable = Array.from(
@@ -290,6 +347,7 @@ adminRouter.post("/providers/:id/fetch-models", async (c) => {
       ...registryModels,
       ...presetModels,
       ...defaultCatModels,
+      ...fallbacks,
       ...activeCustomModels,
     ])
   );
@@ -311,14 +369,20 @@ adminRouter.delete("/providers/:id/models", async (c) => {
   const model = body.model?.trim();
   if (!model) return c.json({ error: { message: "Nome do modelo é obrigatório", type: "validation" } }, 400);
   const cfg = await mutateAdminConfig(c.env, (cfg) => {
+    if (!cfg.removedModels) cfg.removedModels = {};
+    if (!cfg.removedModels[id]) cfg.removedModels[id] = [];
+    if (!cfg.removedModels[id].includes(model)) {
+      cfg.removedModels[id].push(model);
+    }
     if (cfg.customProviders[id]) {
       cfg.customProviders[id].models = cfg.customProviders[id].models.filter((m) => m !== model);
-    } else {
+    }
+    if (cfg.customModels[id]) {
       cfg.customModels[id] = (cfg.customModels[id] || []).filter((m) => m !== model);
     }
     cfg.modelStates[id + "/" + model] = { enabled: false };
   });
-  return c.json({ ok: true, id, model, customModels: cfg.customModels, customProviders: cfg.customProviders });
+  return c.json({ ok: true, id, model, removedModels: cfg.removedModels, customModels: cfg.customModels, customProviders: cfg.customProviders });
 });
 
 adminRouter.get("/models", async (c) => {
@@ -327,15 +391,20 @@ adminRouter.get("/models", async (c) => {
   const allModels: Array<{ id: string; provider: string; enabled: boolean }> = [];
   for (const [pid, p] of Object.entries(PROVIDER_REGISTRY)) {
     const enabled = cfg.providerStates[pid]?.enabled ?? true;
+    const removed = new Set(cfg.removedModels?.[pid] || []);
     for (const m of p.models || []) {
+      if (removed.has(m)) continue;
       allModels.push({ id: m, provider: pid, enabled: enabled && (cfg.modelStates[pid + "/" + m]?.enabled ?? true) });
     }
     for (const m of cfg.customModels[pid] || []) {
+      if (removed.has(m)) continue;
       allModels.push({ id: m, provider: pid, enabled: enabled && (cfg.modelStates[pid + "/" + m]?.enabled ?? true) });
     }
   }
   for (const [pid, cp] of Object.entries(cfg.customProviders)) {
+    const removed = new Set(cfg.removedModels?.[pid] || []);
     for (const m of cp.models || []) {
+      if (removed.has(m)) continue;
       allModels.push({ id: m, provider: pid, enabled: true });
     }
   }
@@ -349,6 +418,10 @@ adminRouter.post("/models", async (c) => {
   const provider = body.provider?.trim();
   if (!model || !provider) return c.json({ error: { message: "provider e model são obrigatórios", type: "validation" } }, 400);
   const cfg = await mutateAdminConfig(c.env, (cfg) => {
+    if (!cfg.removedModels) cfg.removedModels = {};
+    if (cfg.removedModels[provider]) {
+      cfg.removedModels[provider] = cfg.removedModels[provider].filter((m) => m !== model);
+    }
     cfg.customModels[provider] = Array.from(new Set([...(cfg.customModels[provider] || []), model]));
     const mk = provider + "/" + model;
     if (cfg.modelStates[mk]) delete cfg.modelStates[mk];

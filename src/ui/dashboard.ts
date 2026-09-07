@@ -482,6 +482,7 @@ export function renderDashboardHtml(): string {
       <button class="nav-btn" onclick="showTab('playground')">Playground</button>
       <button class="nav-btn" onclick="showTab('docs')">Clientes</button>
       <button class="nav-btn nav-admin" onclick="showTab('admin')">⚙️ Administração</button>
+      <button id="btn-admin-auth-header" class="nav-btn" style="border: 1px solid rgba(56,189,248,0.3); color: var(--primary);" onclick="openAdminAuthModal()">🔑 Autenticar</button>
     </nav>
   </header>
 
@@ -1166,9 +1167,48 @@ dsh --model combo-super-payload
     </div>
   </div>
 
+  <!-- MODAL: AUTENTICAÇÃO DO ADMINISTRADOR -->
+  <div id="modal-admin-auth" class="modal-overlay">
+    <div class="modal-card" style="max-width: 440px; width: 92%;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <h3 style="margin: 0; font-size: 1.15rem; color: #fff; display: flex; align-items: center; gap: 0.5rem;">
+          <span>🔒</span> Autenticação de Administrador
+        </h3>
+        <button type="button" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.85rem;" onclick="closeAdminAuthModal()">✕</button>
+      </div>
+
+      <p style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1.2rem;">
+        Insira a chave secreta <code>AUTH_TOKEN</code> configurada no seu Cloudflare Worker para acessar e gerenciar provedores, modelos, chaves e combos.
+      </p>
+
+      <div style="margin-bottom: 1rem;">
+        <label style="display: block; font-size: 0.8rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.4rem;">
+          AUTH_TOKEN do VeroRoute Edge:
+        </label>
+        <div style="position: relative; display: flex; align-items: center;">
+          <input type="password" id="admin-auth-input" placeholder="Cole seu AUTH_TOKEN aqui..." style="width: 100%; padding-right: 2.5rem; font-size: 0.85rem; font-family: monospace;" onkeydown="if(event.key==='Enter') submitAdminAuthModal()" />
+          <button type="button" onclick="toggleAdminAuthVisibility()" style="position: absolute; right: 0.6rem; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1rem;" title="Mostrar / Ocultar">👁️</button>
+        </div>
+        <div id="admin-auth-error" style="color: var(--rose); font-size: 0.75rem; margin-top: 0.4rem; display: none;"></div>
+      </div>
+
+      <div style="margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.5rem;">
+        <input type="checkbox" id="admin-auth-remember" checked style="cursor: pointer;" />
+        <label for="admin-auth-remember" style="font-size: 0.78rem; color: var(--text-muted); cursor: pointer;">
+          Lembrar autenticação neste navegador
+        </label>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; border-top: 1px solid var(--card-border); padding-top: 0.85rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeAdminAuthModal()">Cancelar</button>
+        <button type="button" class="btn" style="background: linear-gradient(135deg, var(--primary), var(--secondary));" onclick="submitAdminAuthModal()">Autenticar / Salvar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: GERENCIAR MODELOS DO PROVEDOR -->
   <div id="modal-provider-models" class="modal-overlay">
-    <div class="modal-card">
+    <div class="modal-card" style="max-width: 680px; width: 95%;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
         <h3 id="mpm-title" style="margin: 0; font-size: 1.15rem; color: #fff;">🤖 Modelos do Provedor</h3>
         <button type="button" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.85rem;" onclick="closeProviderModelsModal()">✕</button>
@@ -1176,9 +1216,12 @@ dsh --model combo-super-payload
 
       <!-- Modelos Atualmente Ativos -->
       <div style="margin-bottom: 1.25rem;">
-        <label style="display: block; font-size: 0.82rem; font-weight: 600; color: #fff; margin-bottom: 0.5rem;">
-          Modelos Ativos / Habilitados:
-        </label>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <label style="display: block; font-size: 0.82rem; font-weight: 600; color: #fff; margin: 0;">
+            Modelos Ativos / Habilitados:
+          </label>
+          <span id="mpm-active-count" style="font-size: 0.75rem; color: var(--primary);"></span>
+        </div>
         <div id="mpm-active-list" style="display: flex; flex-wrap: wrap; gap: 0.4rem; max-height: 120px; overflow-y: auto; padding: 0.5rem; background: rgba(255,255,255,0.02); border: 1px solid var(--card-border); border-radius: 8px;">
           <!-- Tags dos modelos ativos -->
         </div>
@@ -1186,18 +1229,29 @@ dsh --model combo-super-payload
 
       <!-- Descoberta Upstream & Catálogo -->
       <div style="background: rgba(56, 189, 248, 0.03); border: 1px solid rgba(56, 189, 248, 0.15); border-radius: 10px; padding: 1rem; margin-bottom: 1.25rem;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
           <span style="font-weight: 600; font-size: 0.85rem; color: var(--primary);">
             🔍 Buscar Modelos Disponíveis (Upstream & Catálogo)
           </span>
-          <button type="button" id="mpm-btn-fetch" class="btn btn-secondary" style="padding: 0.3rem 0.75rem; font-size: 0.78rem;" onclick="fetchAvailableModels()">
-            Buscar Modelos
-          </button>
+          <div style="display: flex; gap: 0.35rem;">
+            <button type="button" class="btn btn-secondary" style="padding: 0.25rem 0.55rem; font-size: 0.72rem;" onclick="selectAllDiscoveredModels(true)">
+              Marcar Novos
+            </button>
+            <button type="button" class="btn btn-secondary" style="padding: 0.25rem 0.55rem; font-size: 0.72rem;" onclick="selectAllDiscoveredModels(false)">
+              Desmarcar
+            </button>
+            <button type="button" id="mpm-btn-fetch" class="btn btn-secondary" style="padding: 0.25rem 0.65rem; font-size: 0.72rem;" onclick="fetchAvailableModels()">
+              🔄 Recarregar
+            </button>
+          </div>
         </div>
+
+        <input type="text" id="mpm-model-search" placeholder="🔍 Filtrar modelos encontrados (ex: llama, deepseek, qwen, flash)..." oninput="filterDiscoveredModels()" style="width: 100%; margin-bottom: 0.5rem; font-size: 0.8rem;" />
+
         <div id="mpm-fetch-status" style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">
-          Clique em 'Buscar Modelos' para consultar a API oficial do provedor ou catálogo.
+          Consultando catálogo e API...
         </div>
-        <div id="mpm-discovered-list" style="max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.6rem;">
+        <div id="mpm-discovered-list" style="max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.6rem;">
           <!-- Modelos descobertos com checkboxes -->
         </div>
         <button type="button" id="mpm-btn-add-selected" class="btn" style="display: none; padding: 0.35rem 0.85rem; font-size: 0.8rem;" onclick="addSelectedDiscoveredModels()">
@@ -1211,7 +1265,7 @@ dsh --model combo-super-payload
           ✏️ Adicionar Modelo Manualmente:
         </label>
         <div style="display: flex; gap: 0.5rem;">
-          <input type="text" id="mpm-manual-name" placeholder="Digite o nome do modelo (ex: llama-3.3-70b-versatile, qwen-max)" style="flex: 1; font-size: 0.82rem;" onkeydown="if(event.key==='Enter') addManualModel()" />
+          <input type="text" id="mpm-manual-name" placeholder="Digite o identificador do modelo (ex: llama-3.3-70b-versatile, gemini-2.5-pro)" style="flex: 1; font-size: 0.82rem;" onkeydown="if(event.key==='Enter') addManualModel()" />
           <button type="button" class="btn btn-secondary" style="padding: 0.4rem 0.85rem; font-size: 0.82rem;" onclick="addManualModel()">
             + Adicionar
           </button>
@@ -1295,27 +1349,135 @@ dsh --model combo-super-payload
       });
     }
 
-    function getAdminToken() { return sessionStorage.getItem('vr_admin_token') || ''; }
-    function setAdminToken(t) { if (t && t.trim()) sessionStorage.setItem('vr_admin_token', t.trim()); }
-    function promptAdminToken(force) {
-      var cur = getAdminToken();
-      if (cur && !force) return cur;
-      var t = prompt('VeroRoute Admin: insira o AUTH_TOKEN:');
-      if (t && t.trim()) { setAdminToken(t); return t.trim(); }
-      return cur;
+    var pendingAuthResolvers = [];
+
+    function getAdminToken() {
+      return sessionStorage.getItem('vr_admin_token') || localStorage.getItem('vr_admin_token') || '';
     }
-    function adminFetch(url, opts) {
+
+    function setAdminToken(t, remember) {
+      if (!t || !t.trim()) return;
+      var clean = t.trim();
+      sessionStorage.setItem('vr_admin_token', clean);
+      if (remember !== false) {
+        localStorage.setItem('vr_admin_token', clean);
+      }
+      updateAdminAuthHeaderStatus();
+    }
+
+    function clearAdminToken() {
+      sessionStorage.removeItem('vr_admin_token');
+      localStorage.removeItem('vr_admin_token');
+      updateAdminAuthHeaderStatus();
+    }
+
+    function updateAdminAuthHeaderStatus() {
+      var btn = document.getElementById('btn-admin-auth-header');
+      if (!btn) return;
       var token = getAdminToken();
-      if (!token) { token = promptAdminToken(true); if (!token) return Promise.reject(new Error('Token admin nao fornecido.')); }
-      opts = opts || {};
-      opts.headers = Object.assign({ 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, opts.headers || {});
-      return fetch(url, opts).then(function(res) {
-        if (res.status === 401 || res.status === 503) { sessionStorage.removeItem('vr_admin_token'); alert('Token invalido ou servidor sem AUTH_TOKEN.'); }
-        return res;
+      if (token) {
+        btn.innerText = '🔑 Admin: Ativo';
+        btn.style.color = 'var(--emerald)';
+        btn.style.borderColor = 'rgba(16,185,129,0.4)';
+        btn.title = 'Admin autenticado. Clique para alterar o AUTH_TOKEN.';
+      } else {
+        btn.innerText = '🔑 Autenticar';
+        btn.style.color = 'var(--primary)';
+        btn.style.borderColor = 'rgba(56,189,248,0.28)';
+        btn.title = 'Clique para inserir o AUTH_TOKEN de administrador.';
+      }
+    }
+
+    function openAdminAuthModal() {
+      var input = document.getElementById('admin-auth-input');
+      var errEl = document.getElementById('admin-auth-error');
+      if (input) {
+        input.value = getAdminToken();
+        input.type = 'password';
+      }
+      if (errEl) {
+        errEl.style.display = 'none';
+        errEl.innerText = '';
+      }
+      var modal = document.getElementById('modal-admin-auth');
+      if (modal) modal.classList.add('active');
+      if (input) setTimeout(function() { input.focus(); }, 80);
+    }
+
+    function closeAdminAuthModal() {
+      var modal = document.getElementById('modal-admin-auth');
+      if (modal) modal.classList.remove('active');
+      while (pendingAuthResolvers.length > 0) {
+        var item = pendingAuthResolvers.shift();
+        item.reject(new Error('Autenticação cancelada pelo usuário.'));
+      }
+    }
+
+    function toggleAdminAuthVisibility() {
+      var input = document.getElementById('admin-auth-input');
+      if (!input) return;
+      input.type = input.type === 'password' ? 'text' : 'password';
+    }
+
+    function submitAdminAuthModal() {
+      var input = document.getElementById('admin-auth-input');
+      var errEl = document.getElementById('admin-auth-error');
+      var rememberEl = document.getElementById('admin-auth-remember');
+      var remember = rememberEl ? rememberEl.checked : true;
+      var val = input ? input.value.trim() : '';
+
+      if (!val) {
+        if (errEl) {
+          errEl.innerText = 'Por favor, insira o AUTH_TOKEN.';
+          errEl.style.display = 'block';
+        }
+        return;
+      }
+
+      setAdminToken(val, remember);
+      var modal = document.getElementById('modal-admin-auth');
+      if (modal) modal.classList.remove('active');
+      showToast('AUTH_TOKEN salvo com sucesso!', 'success');
+
+      var resolvers = pendingAuthResolvers.slice();
+      pendingAuthResolvers = [];
+      resolvers.forEach(function(item) { item.resolve(val); });
+
+      loadAdmin();
+      loadCombos();
+    }
+
+    function ensureAdminToken() {
+      var token = getAdminToken();
+      if (token) return Promise.resolve(token);
+      return new Promise(function(resolve, reject) {
+        pendingAuthResolvers.push({ resolve: resolve, reject: reject });
+        openAdminAuthModal();
       });
     }
+
+    async function adminFetch(url, opts) {
+      var token = await ensureAdminToken();
+      opts = opts || {};
+      opts.headers = Object.assign({ 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, opts.headers || {});
+      var res = await fetch(url, opts);
+      if (res.status === 401 || res.status === 503) {
+        clearAdminToken();
+        showToast('AUTH_TOKEN inválido ou não autorizado.', 'error');
+        openAdminAuthModal();
+        var errEl = document.getElementById('admin-auth-error');
+        if (errEl) {
+          errEl.innerText = 'AUTH_TOKEN inválido ou rejeitado pelo servidor.';
+          errEl.style.display = 'block';
+        }
+        throw new Error('AUTH_TOKEN inválido.');
+      }
+      return res;
+    }
+
     function v1Fetch(url, opts) {
-      opts = opts || {}; var tok = getAdminToken();
+      opts = opts || {};
+      var tok = getAdminToken();
       if (tok) opts.headers = Object.assign({ 'Authorization': 'Bearer ' + tok }, opts.headers || {});
       return fetch(url, opts);
     }
@@ -1563,18 +1725,23 @@ dsh --model combo-super-payload
     // Gerenciador de Modelos
     function openProviderModelsModal(providerId) {
       activeModalProviderId = providerId;
-      const p = (window._providersData || []).find(function(x) { return x.id === providerId; });
-      const provName = p ? p.name : providerId;
+      var p = (window._providersData || []).find(function(x) { return x.id === providerId; });
+      var provName = p ? p.name : providerId;
       document.getElementById('mpm-title').innerText = '🤖 Modelos: ' + provName;
 
       renderActiveModelsList();
 
+      var searchInput = document.getElementById('mpm-model-search');
+      if (searchInput) searchInput.value = '';
       document.getElementById('mpm-discovered-list').innerHTML = '';
       document.getElementById('mpm-btn-add-selected').style.display = 'none';
-      document.getElementById('mpm-fetch-status').innerText = 'Clique em "Buscar Modelos" para consultar a API oficial do provedor ou catálogo.';
+      document.getElementById('mpm-fetch-status').innerText = 'Consultando catálogo e API...';
       document.getElementById('mpm-manual-name').value = '';
 
       document.getElementById('modal-provider-models').classList.add('active');
+
+      // Auto-busca imediata ao abrir o modal para experiência fluida
+      fetchAvailableModels();
     }
 
     function closeProviderModelsModal() {
@@ -1582,89 +1749,130 @@ dsh --model combo-super-payload
     }
 
     function renderActiveModelsList() {
-      const p = (window._providersData || []).find(function(x) { return x.id === activeModalProviderId; });
-      const container = document.getElementById('mpm-active-list');
+      var p = (window._providersData || []).find(function(x) { return x.id === activeModalProviderId; });
+      var container = document.getElementById('mpm-active-list');
+      var countEl = document.getElementById('mpm-active-count');
       if (!container) return;
       container.innerHTML = '';
-      const models = (p && p.models) ? p.models : [];
+      var models = (p && p.models) ? p.models : [];
+      if (countEl) countEl.innerText = models.length + ' ativo(s)';
       if (models.length === 0) {
         container.innerHTML = '<span style="color:var(--text-muted); font-size:0.8rem;">Nenhum modelo cadastrado. Adicione abaixo!</span>';
         return;
       }
       models.forEach(function(m) {
-        const tag = document.createElement('span');
+        var tag = document.createElement('span');
         tag.className = 'model-tag';
         tag.innerHTML = escapeHtml(m) + '<span class="remove-btn" title="Remover modelo" onclick="removeModelFromActiveProvider(&apos;' + escapeHtml(m) + '&apos;)">✕</span>';
         container.appendChild(tag);
       });
     }
 
+    function filterDiscoveredModels() {
+      var searchInput = document.getElementById('mpm-model-search');
+      var search = (searchInput ? searchInput.value : '').toLowerCase().trim();
+      var items = document.querySelectorAll('#mpm-discovered-list .model-select-item');
+      items.forEach(function(el) {
+        var text = el.getAttribute('data-model-name') || el.innerText.toLowerCase();
+        if (!search || text.toLowerCase().includes(search)) {
+          el.style.display = 'flex';
+        } else {
+          el.style.display = 'none';
+        }
+      });
+    }
+
+    function selectAllDiscoveredModels(check) {
+      var checkboxes = document.querySelectorAll('.disc-model-cb:not(:disabled)');
+      checkboxes.forEach(function(cb) {
+        var parent = cb.closest('.model-select-item');
+        if (!check || !parent || parent.style.display !== 'none') {
+          cb.checked = check;
+        }
+      });
+    }
+
     async function fetchAvailableModels() {
       if (!activeModalProviderId) return;
-      const btn = document.getElementById('mpm-btn-fetch');
-      const status = document.getElementById('mpm-fetch-status');
-      const listContainer = document.getElementById('mpm-discovered-list');
-      const addSelectedBtn = document.getElementById('mpm-btn-add-selected');
+      var btn = document.getElementById('mpm-btn-fetch');
+      var status = document.getElementById('mpm-fetch-status');
+      var listContainer = document.getElementById('mpm-discovered-list');
+      var addSelectedBtn = document.getElementById('mpm-btn-add-selected');
 
-      btn.disabled = true;
-      btn.innerText = 'Buscando...';
-      status.innerText = 'Consultando API e catálogo de modelos...';
-      listContainer.innerHTML = '';
-      addSelectedBtn.style.display = 'none';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = 'Buscando...';
+      }
+      if (status) status.innerText = 'Consultando API oficial e catálogo de modelos...';
+      if (listContainer) listContainer.innerHTML = '';
+      if (addSelectedBtn) addSelectedBtn.style.display = 'none';
 
       try {
-        const res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/fetch-models', {
+        var res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/fetch-models', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({})
         });
-        const data = await res.json();
-        btn.disabled = false;
-        btn.innerText = 'Buscar Modelos';
+        var data = await res.json();
+        if (btn) {
+          btn.disabled = false;
+          btn.innerText = '🔄 Recarregar';
+        }
 
         if (data.ok && data.models && data.models.length > 0) {
-          const p = (window._providersData || []).find(function(x) { return x.id === activeModalProviderId; });
-          const activeSet = new Set((p && p.models) ? p.models : []);
+          var p = (window._providersData || []).find(function(x) { return x.id === activeModalProviderId; });
+          var activeSet = new Set((p && p.models) ? p.models : []);
 
-          status.innerHTML = (data.hasUpstream
-            ? '<span style="color:var(--emerald); font-weight:600;">✓ ' + data.upstreamCount + ' modelos retornados pela API oficial do provedor!</span>'
-            : '<span style="color:var(--amber);">Modelos do catálogo de referência (Upstream não respondeu ou sem chave).</span>');
+          if (status) {
+            status.innerHTML = (data.hasUpstream
+              ? '<span style="color:var(--emerald); font-weight:600;">✓ ' + data.upstreamCount + ' modelos retornados pela API oficial!</span>'
+              : '<span style="color:var(--amber);">Catálogo de modelos recomendados para este provedor.</span>');
+          }
 
           data.models.forEach(function(m) {
-            const isAlreadyActive = activeSet.has(m);
-            const item = document.createElement('div');
+            var isAlreadyActive = activeSet.has(m);
+            var item = document.createElement('div');
             item.className = 'model-select-item';
+            item.setAttribute('data-model-name', m);
             item.innerHTML =
-              '<div style="display:flex; align-items:center; gap:0.5rem;">' +
-                '<input type="checkbox" class="disc-model-cb" value="' + escapeHtml(m) + '" ' + (isAlreadyActive ? 'checked disabled' : '') + ' style="cursor:pointer;" />' +
-                '<span style="font-family:monospace; font-size:0.8rem;">' + escapeHtml(m) + '</span>' +
+              '<div style="display:flex; align-items:center; gap:0.5rem; overflow:hidden;">' +
+                '<input type="checkbox" class="disc-model-cb" value="' + escapeHtml(m) + '" ' + (isAlreadyActive ? 'checked disabled' : '') + ' style="cursor:pointer; flex-shrink:0;" />' +
+                '<span style="font-family:monospace; font-size:0.8rem; word-break:break-all;">' + escapeHtml(m) + '</span>' +
               '</div>' +
-              (isAlreadyActive ? '<span style="font-size:0.72rem; color:var(--emerald); font-weight:600;">ativo</span>' : '<button class="btn btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.7rem;" onclick="quickAddSingleModel(&apos;' + escapeHtml(m) + '&apos;)">+ Adicionar</button>');
+              (isAlreadyActive ? '<span style="font-size:0.72rem; color:var(--emerald); font-weight:600; flex-shrink:0;">ativo</span>' : '<button type="button" class="btn btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.7rem; flex-shrink:0;" onclick="quickAddSingleModel(&apos;' + escapeHtml(m) + '&apos;)">+ Adicionar</button>');
             listContainer.appendChild(item);
           });
 
-          addSelectedBtn.style.display = 'inline-block';
+          if (addSelectedBtn) addSelectedBtn.style.display = 'inline-block';
+          filterDiscoveredModels();
         } else {
-          status.innerText = 'Nenhum modelo novo encontrado. ' + (data.fetchError ? 'Nota: ' + data.fetchError : '');
+          if (status) status.innerText = 'Nenhum modelo novo encontrado. ' + (data.fetchError ? 'Nota: ' + data.fetchError : '');
         }
       } catch (e) {
-        btn.disabled = false;
-        btn.innerText = 'Buscar Modelos';
-        status.innerText = 'Erro ao buscar modelos: ' + e.message;
+        if (btn) {
+          btn.disabled = false;
+          btn.innerText = '🔄 Recarregar';
+        }
+        if (status) status.innerText = 'Erro ao buscar modelos: ' + e.message;
       }
     }
 
     async function quickAddSingleModel(modelName) {
       if (!activeModalProviderId || !modelName) return;
       try {
-        const res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/models', {
+        var res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/models', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: modelName })
         });
-        const data = await res.json();
+        var data = await res.json();
         if (data.ok) {
           showToast('Modelo "' + modelName + '" adicionado com sucesso!', 'success');
+          var p = (window._providersData || []).find(function(x) { return x.id === activeModalProviderId; });
+          if (p) {
+            p.models = Array.from(new Set([...(p.models || []), modelName]));
+          }
+          renderActiveModelsList();
           await loadAdmin();
           renderActiveModelsList();
           fetchAvailableModels();
@@ -1678,8 +1886,8 @@ dsh --model combo-super-payload
 
     async function addSelectedDiscoveredModels() {
       if (!activeModalProviderId) return;
-      const checkboxes = document.querySelectorAll('.disc-model-cb:checked:not(:disabled)');
-      const selected = [];
+      var checkboxes = document.querySelectorAll('.disc-model-cb:checked:not(:disabled)');
+      var selected = [];
       checkboxes.forEach(function(cb) { selected.push(cb.value); });
 
       if (selected.length === 0) {
@@ -1688,14 +1896,19 @@ dsh --model combo-super-payload
       }
 
       try {
-        const res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/models', {
+        var res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/models', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ models: selected })
         });
-        const data = await res.json();
+        var data = await res.json();
         if (data.ok) {
           showToast(selected.length + ' modelo(s) adicionado(s) com sucesso!', 'success');
+          var p = (window._providersData || []).find(function(x) { return x.id === activeModalProviderId; });
+          if (p) {
+            p.models = Array.from(new Set([...(p.models || []), ...selected]));
+          }
+          renderActiveModelsList();
           await loadAdmin();
           renderActiveModelsList();
           fetchAvailableModels();
@@ -1709,24 +1922,30 @@ dsh --model combo-super-payload
 
     async function addManualModel() {
       if (!activeModalProviderId) return;
-      const input = document.getElementById('mpm-manual-name');
-      const name = input.value.trim();
+      var input = document.getElementById('mpm-manual-name');
+      var name = input ? input.value.trim() : '';
       if (!name) {
         showToast('Digite o nome do modelo a adicionar.', 'error');
         return;
       }
       try {
-        const res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/models', {
+        var res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/models', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: name })
         });
-        const data = await res.json();
+        var data = await res.json();
         if (data.ok) {
           showToast('Modelo "' + name + '" adicionado com sucesso!', 'success');
-          input.value = '';
+          if (input) input.value = '';
+          var p = (window._providersData || []).find(function(x) { return x.id === activeModalProviderId; });
+          if (p) {
+            p.models = Array.from(new Set([...(p.models || []), name]));
+          }
+          renderActiveModelsList();
           await loadAdmin();
           renderActiveModelsList();
+          fetchAvailableModels();
         } else {
           showToast('Erro: ' + JSON.stringify(data.error || data), 'error');
         }
@@ -1739,21 +1958,42 @@ dsh --model combo-super-payload
       if (!activeModalProviderId || !modelName) return;
       if (!confirm('Remover o modelo "' + modelName + '" deste provedor?')) return;
       try {
-        const res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/models', {
+        // Atualização otimista: remove do estado local imediatamente para refletir na interface
+        var p = (window._providersData || []).find(function(x) { return x.id === activeModalProviderId; });
+        if (p && p.models) {
+          p.models = p.models.filter(function(m) { return m !== modelName; });
+        }
+        renderActiveModelsList();
+
+        var res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/models', {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: modelName })
         });
-        const data = await res.json();
+        var data = await res.json();
         if (data.ok) {
-          showToast('Modelo removido com sucesso!', 'info');
+          showToast('Modelo "' + modelName + '" removido com sucesso!', 'info');
           await loadAdmin();
           renderActiveModelsList();
+          // Atualiza lista de descobertos se estiver visível
+          var discItem = document.querySelector('#mpm-discovered-list .model-select-item[data-model-name="' + CSS.escape(modelName) + '"]');
+          if (discItem) {
+            var cb = discItem.querySelector('.disc-model-cb');
+            if (cb) { cb.disabled = false; cb.checked = false; }
+            var statusSpan = discItem.querySelector('span[style*="var(--emerald)"]');
+            if (statusSpan) {
+              statusSpan.outerHTML = '<button type="button" class="btn btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.7rem; flex-shrink:0;" onclick="quickAddSingleModel(\'' + escapeHtml(modelName) + '\')">+ Adicionar</button>';
+            }
+          }
         } else {
-          showToast('Erro: ' + JSON.stringify(data.error || data), 'error');
+          showToast('Erro ao remover modelo: ' + JSON.stringify(data.error || data), 'error');
+          await loadAdmin();
+          renderActiveModelsList();
         }
       } catch (e) {
         showToast('Erro: ' + e.message, 'error');
+        await loadAdmin();
+        renderActiveModelsList();
       }
     }
 
@@ -2355,15 +2595,15 @@ dsh --model combo-super-payload
         });
         const data = await res.json();
         if (data.ok) loadCombos();
-        else alert('Erro: ' + JSON.stringify(data));
+        else showToast('Erro: ' + JSON.stringify(data), 'error');
       } catch (e) {
-        alert('Erro: ' + e.message);
+        showToast('Erro: ' + e.message, 'error');
       }
     }
 
     async function testCombo(comboId) {
       const c = currentCombos[comboId];
-      if (!c || !c.targets || c.targets.length === 0) return alert('Este combo não possui modelos para testar.');
+      if (!c || !c.targets || c.targets.length === 0) return showToast('Este combo não possui modelos para testar.', 'info');
 
       c.targets.forEach(function(_, idx) {
         const badge = document.getElementById('test-badge-' + comboId + '-' + idx);
@@ -2398,13 +2638,13 @@ dsh --model combo-super-payload
           });
         }
       } catch (e) {
-        alert('Erro ao executar testes: ' + e.message);
+        showToast('Erro ao executar testes: ' + e.message, 'error');
       }
     }
 
     async function testAllCombos() {
       const comboIds = Object.keys(currentCombos);
-      if (comboIds.length === 0) return alert('Nenhum combo para testar.');
+      if (comboIds.length === 0) return showToast('Nenhum combo para testar.', 'info');
       for (let i = 0; i < comboIds.length; i++) {
         await testCombo(comboIds[i]);
       }
@@ -2413,12 +2653,15 @@ dsh --model combo-super-payload
     // Inicialização
     const urlParams = new URLSearchParams(window.location.search);
     const initialTab = urlParams.get('tab') || window.location.hash.replace('#tab-', '') || 'overview';
+    updateAdminAuthHeaderStatus();
     if (initialTab && initialTab !== 'overview') {
       showTab(initialTab);
     } else {
-      loadCombos();
+      if (getAdminToken()) {
+        loadCombos();
+        loadAdmin();
+      }
     }
-    loadAdmin();
   </script>
 </body>
 </html>`;

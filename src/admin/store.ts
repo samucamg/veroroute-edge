@@ -73,6 +73,7 @@ export interface AdminConfig {
   customProviders: Record<string, CustomProvider>;
   modelStates: Record<string, { enabled: boolean }>;
   customModels: Record<string, string[]>;
+  removedModels: Record<string, string[]>;
   searchConfig: AdminSearchConfig;
   virtualKeys: Record<string, VirtualApiKey>;
   combos: Record<string, ComboConfig>;
@@ -132,6 +133,7 @@ const DEFAULT_ADMIN_CONFIG: AdminConfig = {
   customProviders: {},
   modelStates: {},
   customModels: {},
+  removedModels: {},
   searchConfig: {
     activeProvider: "auto",
     searxngUrl: "",
@@ -197,6 +199,7 @@ export async function getAdminConfig(env: EnvBindings): Promise<AdminConfig> {
         customProviders: { ...(p.customProviders ?? {}) },
         modelStates: { ...(p.modelStates ?? {}) },
         customModels: { ...(p.customModels ?? {}) },
+        removedModels: { ...(p.removedModels ?? {}) },
         combos: mergeComos(p),
         antigravityConfig: p.antigravityConfig,
       };
