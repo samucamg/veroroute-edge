@@ -5,33 +5,36 @@
   "compatibility_date": "2025-02-24",
   "compatibility_flags": ["nodejs_compat"],
 
-  // Workers AI - Provedor nativo serverless sem chaves externas (10.000 neurônios/dia grátis)
+  // Workers AI binding (free tier: 10,000 neurons/day)
   "ai": {
     "binding": "AI"
   },
 
-  // KV Namespaces para persistência de tokens, cache de rate limit e chaves
+  // KV Namespaces — B-3: real namespace IDs replaced with placeholders.
+  // Run: wrangler kv:namespace create OMNI_CACHE
+  //      wrangler kv:namespace create OMNI_KEYS
+  // Then paste the returned IDs below.
   "kv_namespaces": [
     {
       "binding": "OMNI_CACHE",
-      "id": "bc7b2dd9bcb14181be1580c56d1ac12f"
+      "id": "<YOUR_OMNI_CACHE_KV_ID>"
     },
     {
       "binding": "OMNI_KEYS",
-      "id": "977429b93522435185128806296e7423"
+      "id": "<YOUR_OMNI_KEYS_KV_ID>"
     }
   ],
 
-  // Variáveis de ambiente padrão
+  // Default environment variables (override in .dev.vars for local dev, or via wrangler secret put)
   "vars": {
     "DEFAULT_ROUTING_STRATEGY": "priority",
     "DEFAULT_OUTPUT_STYLE": "none",
-    "SEARXNG_URL": "", // Insira sua instância SearXNG própria aqui ou configure no .dev.vars
+    "SEARXNG_URL": "",
     "ENABLE_MODALITY_BRIDGE": "true",
     "ENABLE_CONTEXT_COMPRESSION": "true",
     "ENABLE_JINA_READER": "true",
-    "ENABLE_MCP_SERVER": "true",
-    "ENABLE_QUOTA_SHARING": "true",
+    "ENABLE_MCP_SERVER": "false",
+    "ENABLE_QUOTA_SHARING": "false",
     "MAX_RETRIES": "3",
     "RETRY_DELAY_MS": "1000"
   },

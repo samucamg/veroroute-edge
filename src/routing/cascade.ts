@@ -1,4 +1,4 @@
-import { DEFAULT_COMBOS, DEFAULT_MODELS_CATALOG } from "@/config/constants";
+import { DEFAULT_MODELS_CATALOG } from "@/config/constants";
 import { executeAntigravityRequest } from "@/adapters/antigravity";
 import { executeCloudflareAI } from "@/adapters/cloudflare-ai";
 import { executeOneMinAI } from "@/adapters/onemin";
@@ -11,109 +11,60 @@ import { evaluateQuotaShare, recordQuotaShareUsage } from "./quotaShare";
 import { applyRoutingStrategy, recordCandidateSuccess, type TargetCandidate } from "./strategies";
 import type { ChatCompletionRequest } from "@/types/openai";
 import type { EnvBindings } from "@/types/provider";
-
 import type { AdminConfig } from "@/admin/store";
 
-/**
- * Resolve a lista de candidatos a partir do modelo solicitado ou de combos dinâmicos (onde o nome do combo é o modelo)
- */
+/** Resolve the list of routing candidates from the requested model name or combo ID. */
 export function resolveCandidates(
   request: ChatCompletionRequest,
   adminCfg?: AdminConfig
 ): { candidates: TargetCandidate[]; comboStrategy?: string } {
   const model = request.model;
 
-  // 1. Se for um Combo Dinâmico definido no Painel de Administração (persistido no KV)
-  if (adminCfg?.combos && adminCfg.combos[model] && adminCfg.combos[model].enabled) {
+  // 1. Dynamic combo from admin config (KV-persisted)
+  if (adminCfg?.combos?.[model]?.enabled) {
     const combo = adminCfg.combos[model];
     return {
       candidates: combo.targets.map((t) => ({
         provider: t.provider,
         model: t.model,
+        weight: t.weight,
+        priority: t.priority,
+        cost: 0,
       })),
       comboStrategy: combo.strategy,
     };
   }
 
-  // 2. Se for um Combo padrão estático
-  if (DEFAULT_COMBOS[model as keyof typeof DEFAULT_COMBOS]) {
-    const combo = DEFAULT_COMBOS[model as keyof typeof DEFAULT_COMBOS];
-    return {
-      candidates: combo.targets.map((t) => ({
-        provider: t.provider,
-        model: t.model,
-      })),
-      comboStrategy: combo.strategy,
-    };
+  // 2. Provider-prefixed model (explicit routing)
+  for (const prefix of ["antigravity", "1min", "cloudflare-ai", "cerebras", "groq", "gemini", "azure", "bedrock"]) {
+    if (model.startsWith(prefix + "/") || (prefix === "cloudflare-ai" && model.startsWith("@cf/"))) {
+      return { candidates: [{ provider: prefix === "cloudflare-ai" ? "cloudflare-ai" : prefix, model }] };
+    }
   }
 
-  // 3. Se o modelo tiver prefixo explícito do provedor
-  if (model.startsWith("antigravity/")) {
-    return { candidates: [{ provider: "antigravity", model }] };
-  }
-  if (model.startsWith("1min/")) {
-    return { candidates: [{ provider: "1min", model }] };
-  }
-  if (model.startsWith("@cf/")) {
-    return { candidates: [{ provider: "cloudflare-ai", model }] };
-  }
-  if (model.startsWith("cerebras/")) {
-    return { candidates: [{ provider: "cerebras", model }] };
-  }
-  if (model.startsWith("groq/")) {
-    return { candidates: [{ provider: "groq", model }] };
-  }
-  if (model.startsWith("gemini/")) {
-    return { candidates: [{ provider: "gemini", model }] };
-  }
-  if (model.startsWith("azure/")) {
-    return { candidates: [{ provider: "azure", model }] };
-  }
-  if (model.startsWith("bedrock/")) {
-    return { candidates: [{ provider: "bedrock", model }] };
-  }
-
-  // 4. Procura no catálogo padrão
+  // 3. Catalog lookup
   const matched = DEFAULT_MODELS_CATALOG.find((m) => m.id === model);
-  if (matched && matched.provider) {
-    const primary: TargetCandidate = {
-      provider: matched.provider,
-      model: matched.id,
-      cost: matched.pricing?.input_per_million || 0,
-    };
-
+  if (matched?.provider) {
+    const primary: TargetCandidate = { provider: matched.provider, model: matched.id, cost: matched.pricing?.input_per_million || 0 };
     const fallbacks: TargetCandidate[] = [];
-    if (primary.provider !== "groq") {
-      fallbacks.push({ provider: "groq", model: "llama-3.3-70b-versatile" });
-    }
-    if (primary.provider !== "gemini") {
-      fallbacks.push({ provider: "gemini", model: "gemini-2.5-flash" });
-    }
-    fallbacks.push({
-      provider: "cloudflare-ai",
-      model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-    });
-
+    if (primary.provider !== "groq") fallbacks.push({ provider: "groq", model: "llama-3.3-70b-versatile", cost: 0 });
+    if (primary.provider !== "gemini") fallbacks.push({ provider: "gemini", model: "gemini-2.5-flash", cost: 0 });
+    fallbacks.push({ provider: "cloudflare-ai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", cost: 0 });
     return { candidates: [primary, ...fallbacks] };
   }
 
-  // 5. Default: Procura na Groq, Gemini, Cloudflare ou Pollinations
+  // 4. Default cascade
   return {
     candidates: [
-      { provider: "groq", model: "llama-3.3-70b-versatile" },
-      { provider: "gemini", model: "gemini-2.5-flash" },
-      { provider: "cloudflare-ai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
-      { provider: "pollinations", model: "openai" },
+      { provider: "groq", model: "llama-3.3-70b-versatile", cost: 0 },
+      { provider: "gemini", model: "gemini-2.5-flash", cost: 0 },
+      { provider: "cloudflare-ai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", cost: 0 },
+      { provider: "pollinations", model: "openai", cost: 0 },
     ],
   };
 }
 
-/**
- * Aplica regras de administração na lista de candidatos do roteamento:
- *  - Prioriza provedores customizados quando o modelo usa o prefixo <id>/
- *  - Filtra provedores desabilitados no painel de administração
- *  - Remove modelos excluídos individualmente
- */
+/** Filter and reorder candidates according to admin routing rules. */
 async function applyAdminRouting(
   ordered: TargetCandidate[],
   request: ChatCompletionRequest,
@@ -123,73 +74,70 @@ async function applyAdminRouting(
   const customIds = new Set(Object.keys(cfg.customProviders));
   let candidates = [...ordered];
 
-  // 1. Se o modelo usar prefixo de provedor customizado, prioriza esse provedor
+  // Inject custom provider at the front if addressed by prefix
   const model = request.model || "";
   const slashIdx = model.indexOf("/");
   const colonIdx = model.indexOf(":");
-  let prefix = "";
-  if (slashIdx > 0) prefix = model.slice(0, slashIdx);
-  else if (colonIdx > 0) prefix = model.slice(0, colonIdx);
-
+  const prefix = slashIdx > 0 ? model.slice(0, slashIdx) : colonIdx > 0 ? model.slice(0, colonIdx) : "";
   if (prefix && customIds.has(prefix) && !candidates.some((c) => c.provider === prefix)) {
-    candidates.unshift({ provider: prefix, model });
+    candidates.unshift({ provider: prefix, model, cost: 0 });
   }
 
-  // 2. Filtra provedores desabilitados no painel de administração
+  // Filter disabled providers
   candidates = candidates.filter((cand) => {
-    if (customIds.has(cand.provider)) return true; // custom sempre ativo
-    const state = cfg.providerStates[cand.provider]?.enabled;
-    return state !== false; // sem estado explícito => habilitado
+    if (customIds.has(cand.provider)) return true;
+    return cfg.providerStates[cand.provider]?.enabled !== false;
   });
 
-  // 3. Remove modelos marcados como excluídos individualmente
-  candidates = candidates.filter((cand) => {
-    const modelKey = cand.provider + "/" + cand.model;
-    return cfg.modelStates[modelKey]?.enabled !== false;
-  });
+  // Filter individually disabled models
+  candidates = candidates.filter((cand) => cfg.modelStates[cand.provider + "/" + cand.model]?.enabled !== false);
 
   return candidates;
 }
 
 /**
- * Orquestra a execução da requisição com cascata de auto-fallback e balanceamento
+ * Dispatch with cascade fallback.
+ *
+ * C-3: quota is evaluated against the authenticated API key ID passed in via
+ * request.apiKeyId (set by the auth middleware in index.ts via c.set), NOT
+ * against the client-supplied request.user field.
  */
 export async function dispatchWithCascade(
   request: ChatCompletionRequest,
-  env: EnvBindings
+  env: EnvBindings,
+  /** Authenticated principal ID — set by the auth middleware, never from client body */
+  authenticatedKeyId?: string
 ): Promise<Response> {
   const adminCfg = await getAdminConfig(env);
-  // Registra provedores customizados do painel admin
+
+  // Register custom providers from admin config
   for (const [pid, cp] of Object.entries(adminCfg.customProviders)) {
     registerCustomProvider(pid, {
-      name: cp.name,
-      baseUrl: cp.baseUrl,
-      authType: "bearer",
-      models: cp.models,
-      freeTier: cp.freeTier,
+      name: cp.name, baseUrl: cp.baseUrl, authType: "bearer",
+      models: cp.models, freeTier: cp.freeTier,
       supportsStreaming: cp.supportsStreaming,
-      supportsTools: cp.supportsTools,
-      supportsVision: cp.supportsVision,
+      supportsTools: cp.supportsTools, supportsVision: cp.supportsVision,
     });
   }
-  const { candidates: initialCandidates, comboStrategy } = resolveCandidates(request, adminCfg);
-  const strategy = request.routing_strategy || (comboStrategy as any) || env.DEFAULT_ROUTING_STRATEGY || "priority";
+
+  const { candidates: initial, comboStrategy } = resolveCandidates(request, adminCfg);
+  const strategy = request.routing_strategy || comboStrategy || env.DEFAULT_ROUTING_STRATEGY || "priority";
   const orderedCandidates = await applyAdminRouting(
-    applyRoutingStrategy(initialCandidates, strategy, request.user),
+    applyRoutingStrategy(initial, strategy, undefined), // session affinity uses authenticatedKeyId, not user field
     request,
     env
   );
 
-  // Verificação opcional de Quota Sharing (Compartilhamento de Cota)
-  if (env.ENABLE_QUOTA_SHARING === "true" && request.user) {
-    const quotaDecision = await evaluateQuotaShare(request.user, env);
+  // C-3 + M-9: Quota check only when flag is on AND we have an authenticated key ID
+  if (env.ENABLE_QUOTA_SHARING === "true" && authenticatedKeyId) {
+    const quotaDecision = evaluateQuotaShare(authenticatedKeyId, env);
     if (!quotaDecision.allowed) {
       return new Response(
         JSON.stringify({
           error: {
             message: "Limite de cota compartilhada excedido. Aguarde a liberação da janela de uso.",
             type: "quota_share_exceeded",
-            details: quotaDecision,
+            resetAt: new Date(quotaDecision.resetAt).toISOString(),
           },
         }),
         { status: 429, headers: { "Content-Type": "application/json" } }
@@ -203,93 +151,56 @@ export async function dispatchWithCascade(
     try {
       let response: Response;
 
-      // 1. Antigravity CLI / Google Cloud Code Assist (OAuth)
       if (candidate.provider === "antigravity") {
         const { accessToken, projectId } = await getValidAntigravityAccessToken(env);
         response = await executeAntigravityRequest(request, accessToken, projectId, candidate.model);
-      }
-      // 2. 1min.ai (com ReAct Tool Calling)
-      else if (candidate.provider === "1min") {
+      } else if (candidate.provider === "1min") {
         const key = await selectActiveKey(env, "1min");
         response = await executeOneMinAI(request, key, candidate.model);
-      }
-      // 3. Cloudflare Workers AI Nativo
-      else if (candidate.provider === "cloudflare-ai") {
+      } else if (candidate.provider === "cloudflare-ai") {
         response = await executeCloudflareAI(request, env.AI, candidate.model);
-      }
-      // 4. Provedores padrão (OpenAI, Gemini, Groq, Cerebras, Alibaba, Azure, Bedrock, etc.)
-      else {
+      } else {
         const apiKey = await selectActiveKey(env, candidate.provider);
         if (!apiKey && candidate.provider !== "pollinations") {
-          errors.push({
-            provider: candidate.provider,
-            model: candidate.model,
-            status: 401,
-            message: `Sem chave de API configurada para o provedor ${candidate.provider}. Pulando para fallback...`,
-          });
+          errors.push({ provider: candidate.provider, model: candidate.model, status: 401, message: `Sem chave de API configurada para ${candidate.provider}` });
           continue;
         }
-
         response = await executeOpenAICompatible(request, candidate.provider, apiKey, candidate.model);
-
-        if (response.status === 429) {
-          markKeyRateLimited(env, apiKey, 60);
-        }
+        if (response.status === 429) markKeyRateLimited(env, apiKey, 60);
       }
 
-      // Se a resposta foi bem-sucedida, registra sucesso e telemetria
       if (response.ok) {
-        recordCandidateSuccess(candidate, request.user);
-        if (request.user) {
-          recordQuotaShareUsage(request.user, 1);
+        recordCandidateSuccess(candidate, authenticatedKeyId);
+        // M-9 + C-3: record usage only under flag and only for authenticated keys
+        if (env.ENABLE_QUOTA_SHARING === "true" && authenticatedKeyId) {
+          recordQuotaShareUsage(authenticatedKeyId, 1);
         }
         return response;
       }
 
-      // Se foi erro de cota (429), erro de credencial (401, 403) ou erro do servidor (500-504), tenta o próximo candidato
-      if (
-        response.status === 429 ||
-        response.status === 401 ||
-        response.status === 403 ||
-        (response.status >= 500 && response.status <= 504)
-      ) {
+      if (response.status === 429 || response.status === 401 || response.status === 403 || (response.status >= 500 && response.status <= 504)) {
         const errBody = await response.clone().text().catch(() => "");
-        errors.push({
-          provider: candidate.provider,
-          model: candidate.model,
-          status: response.status,
-          message: errBody.slice(0, 200),
-        });
-        console.warn(
-          `[VeroRoute Cascata] Provedor ${candidate.provider} (${candidate.model}) falhou com status ${response.status}. Pulando para o próximo fallback...`
-        );
+        errors.push({ provider: candidate.provider, model: candidate.model, status: response.status, message: errBody.slice(0, 200) });
+        console.warn(`[VeroRoute] ${candidate.provider} (${candidate.model}) -> ${response.status}: fallback`);
         continue;
       }
 
-      // Outros erros
       return response;
-    } catch (err: any) {
-      errors.push({
-        provider: candidate.provider,
-        model: candidate.model,
-        status: 500,
-        message: err.message || String(err),
-      });
-      console.warn(
-        `[VeroRoute Cascata] Exceção no provedor ${candidate.provider} (${candidate.model}): ${err.message}. Continuando cascata...`
-      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push({ provider: candidate.provider, model: candidate.model, status: 500, message: msg });
+      console.warn(`[VeroRoute] Exception in ${candidate.provider} (${candidate.model}): ${msg}`);
     }
   }
 
-  // Se todos falharam
   return new Response(
     JSON.stringify({
       error: {
-        message: "Todos os provedores da cascata de fallback falharam ou estão indisponíveis.",
+        message: "Todos os provedores da cascata falharam.",
         type: "veroroute_cascade_failure",
         attempts: errors,
       },
     }),
-    { status: 503, headers: { "Content-Type": "application/json" } }
+    { status: 502, headers: { "Content-Type": "application/json" } }
   );
 }

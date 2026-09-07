@@ -2,19 +2,14 @@ import type { EnvBindings } from "@/types/provider";
 
 // =============================================================================
 // Store Administrativo do VeroRoute Edge (persistido no Cloudflare KV OMNI_KEYS)
-// =============================================================================
-// Permite gerenciar dinamicamente:
-//  - Habilitar / desabilitar provedores já existentes
-//  - Adicionar / remover chaves de API para balanceamento (round-robin)
-//  - Registrar provedores customizados compatíveis com OpenAI ou Anthropic
-//  - Adicionar / excluir modelos do catálogo
+// Fixes: A-5 (combo deletion blacklist), A-6 (optimistic-concurrency mutate)
 // =============================================================================
 
 export interface CustomProvider {
-  id: string;                 // slug único (ex: "minha-empresa")
-  name: string;               // nome de exibição
-  baseUrl: string;            // URL base upstream
-  apiKeys: string[];          // chaves para round-robin (separadas por vírgula na UI)
+  id: string;
+  name: string;
+  baseUrl: string;
+  apiKeys: string[];
   protocol: "openai" | "anthropic";
   models: string[];
   freeTier: boolean;
@@ -34,10 +29,10 @@ export interface AdminSearchConfig {
 }
 
 export interface VirtualApiKey {
-  id: string;               // ex: "sk-vr-..."
-  name: string;             // ex: "Cursor IDE"
+  id: string;
+  name: string;
   createdAt: string;
-  allowedModels: string[];   // ["*"] ou específicos
+  allowedModels: string[];
   rpmLimit?: number;
   totalRequests: number;
   lastUsedAt?: string;
@@ -52,8 +47,8 @@ export interface ComboTarget {
 }
 
 export interface ComboConfig {
-  id: string;                 // Nome do combo (ex: "combo-super-payload") que atua como o model ID
-  name: string;               // Nome descritivo
+  id: string;
+  name: string;
   description?: string;
   strategy: "priority" | "round-robin" | "p2c" | "lowest-cost" | "random";
   targets: ComboTarget[];
@@ -70,26 +65,69 @@ export interface AntigravityOAuthConfig {
 
 export interface AdminConfig {
   version: number;
-  // Habilitar/desabilitar provedores existentes: id -> { enabled }
+  /** Monotonic counter incremented on every save — used for optimistic-concurrency retry (A-6). */
+  _seq: number;
+  /** IDs of built-in default combos deliberately deleted by the admin — prevents resurrection on merge (A-5). */
+  _deletedDefaultCombos: string[];
   providerStates: Record<string, { enabled: boolean }>;
-  // Provedores customizados (OpenAI/Anthropic-compatible)
   customProviders: Record<string, CustomProvider>;
-  // Excluir modelos do catálogo: "provider/model-id" -> { enabled:false }
   modelStates: Record<string, { enabled: boolean }>;
-  // Modelos adicionados a provedores existentes: providerId -> string[]
   customModels: Record<string, string[]>;
-  // Configuração dinâmica de motores de busca
   searchConfig: AdminSearchConfig;
-  // Chaves de API virtuais para clientes externos
   virtualKeys: Record<string, VirtualApiKey>;
-  // Combos Dinâmicos de Modelos e Failover
   combos: Record<string, ComboConfig>;
-  // Configuração de Credenciais OAuth do Antigravity CLI (persistidas no KV, fora do Git)
   antigravityConfig?: AntigravityOAuthConfig;
 }
 
+// ---------------------------------------------------------------------------
+// Built-in default combos
+// ---------------------------------------------------------------------------
+const DEFAULT_COMBOS: Record<string, ComboConfig> = {
+  "omni-free": {
+    id: "omni-free",
+    name: "Omni Free Tier",
+    description: "Cascata otimizada de provedores gratuitos de alta qualidade",
+    strategy: "priority",
+    targets: [
+      { provider: "gemini", model: "gemini-2.0-flash", priority: 1 },
+      { provider: "cloudflare-ai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", priority: 2 },
+      { provider: "groq", model: "llama-3.3-70b-versatile", priority: 3 },
+    ],
+    enabled: true,
+  },
+  "omni-code": {
+    id: "omni-code",
+    name: "Omni Code Specialist",
+    description: "Roteamento inteligente para tarefas de programação",
+    strategy: "priority",
+    targets: [
+      { provider: "gemini", model: "gemini-2.0-flash", priority: 1 },
+      { provider: "groq", model: "qwen-2.5-coder-32b", priority: 2 },
+      { provider: "cloudflare-ai", model: "@cf/qwen/qwen2.5-coder-32b-instruct", priority: 3 },
+    ],
+    enabled: true,
+  },
+  "omni-fast": {
+    id: "omni-fast",
+    name: "Omni Ultra Fast",
+    description: "Latência mínima com modelos menores e rápidos",
+    strategy: "priority",
+    targets: [
+      { provider: "groq", model: "llama-3.1-8b-instant", priority: 1 },
+      { provider: "cloudflare-ai", model: "@cf/meta/llama-3.1-8b-instruct", priority: 2 },
+      { provider: "gemini", model: "gemini-2.0-flash-lite", priority: 3 },
+    ],
+    enabled: true,
+  },
+};
+
+// Expose for use in cascade/routes without importing the whole store
+export { DEFAULT_COMBOS };
+
 const DEFAULT_ADMIN_CONFIG: AdminConfig = {
   version: 1,
+  _seq: 0,
+  _deletedDefaultCombos: [],
   providerStates: {},
   customProviders: {},
   modelStates: {},
@@ -102,108 +140,137 @@ const DEFAULT_ADMIN_CONFIG: AdminConfig = {
     braveApiKey: "",
   },
   virtualKeys: {},
-  combos: {
-    "omni-free": {
-      id: "omni-free",
-      name: "Omni Free Tier Cascade",
-      description: "Cascata de failover 100% gratuita com Gemini, Groq, Cerebras e Qwen.",
-      strategy: "priority",
-      targets: [
-        { provider: "gemini", model: "gemini-2.5-flash" },
-        { provider: "groq", model: "llama-3.3-70b-versatile" },
-        { provider: "cerebras", model: "llama3.3-70b" },
-        { provider: "alibaba", model: "qwen-plus" },
-        { provider: "cloudflare-ai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
-        { provider: "openrouter", model: "meta-llama/llama-3.3-70b-instruct:free" },
-        { provider: "pollinations", model: "openai" },
-      ],
-      enabled: true,
-    },
-    "omni-code": {
-      id: "omni-code",
-      name: "Omni Coding Specialist",
-      description: "Especialista em programação e agentes CLI (Claude 3.7, Qwen 2.5 Coder, Gemini 2.5 Pro).",
-      strategy: "priority",
-      targets: [
-        { provider: "antigravity", model: "gemini-2.5-pro" },
-        { provider: "1min", model: "1min/gpt-4o" },
-        { provider: "alibaba", model: "qwen2.5-coder-32b-instruct" },
-        { provider: "cloudflare-ai", model: "@cf/qwen/qwen2.5-coder-32b-instruct" },
-        { provider: "groq", model: "llama-3.3-70b-versatile" },
-        { provider: "cerebras", model: "llama3.3-70b" },
-      ],
-      enabled: true,
-    },
-    "omni-fast": {
-      id: "omni-fast",
-      name: "Omni Speed Champions (500-2000 t/s)",
-      description: "Modelos ultra-rápidos com menor latência para auto-complete e tarefas interativas.",
-      strategy: "p2c",
-      targets: [
-        { provider: "cerebras", model: "llama3.3-70b" },
-        { provider: "groq", model: "llama-3.3-70b-versatile" },
-      ],
-      enabled: true,
-    },
-  },
+  combos: {},
 };
 
-/** Chave principal no KV OMNI_KEYS onde o config admin é persistido */
 const KV_ADMIN_KEY = "admin:config";
 const KV_CUSTOM_KEYS_PREFIX = "keys_";
 
-// Cache em memória por isolate + TTL curto para evitar round-trips no KV
-const CACHE_TTL_MS = 5000;
+const CACHE_TTL_MS = 5_000;
 let cache: { data: AdminConfig; ts: number } | null = null;
 
 function cloneConfig(cfg: AdminConfig): AdminConfig {
   return JSON.parse(JSON.stringify(cfg));
 }
 
+function invalidateCache(): void {
+  cache = null;
+}
+
 /**
- * Carrega o AdminConfig do KV. Usa cache local com TTL de 5s para reduzir
- * round-trips ao Cloudflare KV sem sacrificar consistência.
+ * Build the effective combos map — A-5:
+ *  1. Default combos not in _deletedDefaultCombos
+ *  2. Overlaid with admin-persisted combos (created / updated)
  */
+function mergeComos(p: Partial<AdminConfig>): Record<string, ComboConfig> {
+  const deleted = new Set<string>(p._deletedDefaultCombos ?? []);
+  const base: Record<string, ComboConfig> = {};
+  for (const [id, cfg] of Object.entries(DEFAULT_COMBOS)) {
+    if (!deleted.has(id)) base[id] = cfg;
+  }
+  return { ...base, ...(p.combos ?? {}) };
+}
+
 export async function getAdminConfig(env: EnvBindings): Promise<AdminConfig> {
   const now = Date.now();
-  if (cache && now - cache.ts < CACHE_TTL_MS) {
-    return cloneConfig(cache.data);
-  }
+  if (cache && now - cache.ts < CACHE_TTL_MS) return cloneConfig(cache.data);
 
   const kv = env.OMNI_KEYS;
-  if (!kv) return cloneConfig(DEFAULT_ADMIN_CONFIG);
+  if (!kv) {
+    const def = cloneConfig(DEFAULT_ADMIN_CONFIG);
+    cache = { data: def, ts: now };
+    return cloneConfig(def);
+  }
 
   try {
     const raw = await kv.get(KV_ADMIN_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<AdminConfig>;
+      const p = JSON.parse(raw) as Partial<AdminConfig>;
       const merged: AdminConfig = {
         ...DEFAULT_ADMIN_CONFIG,
-        ...parsed,
-        searchConfig: { ...DEFAULT_ADMIN_CONFIG.searchConfig, ...(parsed.searchConfig || {}) },
-        virtualKeys: { ...(parsed.virtualKeys || {}) },
-        providerStates: { ...(parsed.providerStates || {}) },
-        customProviders: { ...(parsed.customProviders || {}) },
-        modelStates: { ...(parsed.modelStates || {}) },
-        customModels: { ...(parsed.customModels || {}) },
-        combos: { ...DEFAULT_ADMIN_CONFIG.combos, ...(parsed.combos || {}) },
-        antigravityConfig: parsed.antigravityConfig || undefined,
+        ...p,
+        _seq: p._seq ?? 0,
+        _deletedDefaultCombos: p._deletedDefaultCombos ?? [],
+        searchConfig: { ...DEFAULT_ADMIN_CONFIG.searchConfig, ...(p.searchConfig ?? {}) },
+        virtualKeys: { ...(p.virtualKeys ?? {}) },
+        providerStates: { ...(p.providerStates ?? {}) },
+        customProviders: { ...(p.customProviders ?? {}) },
+        modelStates: { ...(p.modelStates ?? {}) },
+        customModels: { ...(p.customModels ?? {}) },
+        combos: mergeComos(p),
+        antigravityConfig: p.antigravityConfig,
       };
       cache = { data: merged, ts: now };
       return cloneConfig(merged);
     }
   } catch {
-    // Se o JSON estiver corrompido, ignora e usa o default
+    // corrupted JSON — fall through to default
   }
 
-  cache = { data: DEFAULT_ADMIN_CONFIG, ts: now };
-  return cloneConfig(DEFAULT_ADMIN_CONFIG);
+  const def = cloneConfig(DEFAULT_ADMIN_CONFIG);
+  cache = { data: def, ts: now };
+  return cloneConfig(def);
+}
+
+export async function saveAdminConfig(env: EnvBindings, cfg: AdminConfig): Promise<void> {
+  const kv = env.OMNI_KEYS;
+  if (kv) await kv.put(KV_ADMIN_KEY, JSON.stringify(cfg));
+  cache = { data: cloneConfig(cfg), ts: Date.now() };
 }
 
 /**
- * Recupera as credenciais de OAuth do Antigravity CLI com segurança
- * Prioridade: KV OMNI_KEYS -> env vars -> fallback
+ * Optimistic-concurrency mutate — A-6.
+ * Reads freshly, checks _seq hasn't changed, retries on conflict.
+ * KV has no native CAS but this covers the common low-contention case.
  */
+export async function mutateAdminConfig(
+  env: EnvBindings,
+  mutator: (cfg: AdminConfig) => void,
+  maxRetries = 3
+): Promise<AdminConfig> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    invalidateCache();
+    const cfg = await getAdminConfig(env);
+    const seqBefore = cfg._seq;
+    cfg._seq = seqBefore + 1;
+    mutator(cfg);
+
+    // Verify no concurrent write snuck in
+    if (env.OMNI_KEYS && attempt < maxRetries) {
+      const check = await env.OMNI_KEYS.get(KV_ADMIN_KEY);
+      if (check) {
+        try {
+          const onDisk = (JSON.parse(check) as Partial<AdminConfig>)._seq ?? 0;
+          if (onDisk !== seqBefore) continue; // retry
+        } catch { /* corrupted, proceed */ }
+      }
+    }
+
+    await saveAdminConfig(env, cfg);
+    return cfg;
+  }
+  // exhausted retries — write anyway (best-effort)
+  invalidateCache();
+  const cfg = await getAdminConfig(env);
+  cfg._seq = (cfg._seq ?? 0) + 1;
+  mutator(cfg);
+  await saveAdminConfig(env, cfg);
+  return cfg;
+}
+
+/**
+ * Delete a combo — A-5.
+ * Records default combo IDs in the blacklist so they are not resurrected.
+ */
+export async function deleteCombo(env: EnvBindings, comboId: string): Promise<void> {
+  await mutateAdminConfig(env, (cfg) => {
+    if (DEFAULT_COMBOS[comboId] !== undefined && !cfg._deletedDefaultCombos.includes(comboId)) {
+      cfg._deletedDefaultCombos.push(comboId);
+    }
+    delete cfg.combos[comboId];
+  });
+}
+
 export async function getAntigravityOAuthCredentials(
   env: EnvBindings
 ): Promise<{ clientId: string; clientSecret: string; isConfigured: boolean }> {
@@ -215,42 +282,14 @@ export async function getAntigravityOAuthCredentials(
   const clientSecret =
     fromKv?.clientSecret?.trim() ||
     (typeof env.ANTIGRAVITY_CLIENT_SECRET === "string" ? env.ANTIGRAVITY_CLIENT_SECRET.trim() : "");
-
   const isConfigured = Boolean(
-    clientId &&
-    clientSecret &&
+    clientId && clientSecret &&
     clientId !== "YOUR_GOOGLE_CLIENT_ID_HERE" &&
     clientSecret !== "YOUR_GOOGLE_CLIENT_SECRET_HERE"
   );
-
   return { clientId, clientSecret, isConfigured };
 }
 
-/**
- * Persiste o AdminConfig no KV OMNI_KEYS e atualiza o cache local.
- */
-export async function saveAdminConfig(env: EnvBindings, cfg: AdminConfig): Promise<void> {
-  const kv = env.OMNI_KEYS;
-  if (kv) {
-    await kv.put(KV_ADMIN_KEY, JSON.stringify(cfg));
-  }
-  cache = { data: cloneConfig(cfg), ts: Date.now() };
-}
-
-/**
- * Efetua uma mutação atômica no AdminConfig (load -> mutate -> save).
- */
-export async function mutateAdminConfig(
-  env: EnvBindings,
-  mutator: (cfg: AdminConfig) => void
-): Promise<AdminConfig> {
-  const cfg = await getAdminConfig(env);
-  mutator(cfg);
-  await saveAdminConfig(env, cfg);
-  return cfg;
-}
-
-/** Sanitiza um id de provedor customizado para um slug seguro. */
 export function slugifyProviderId(name: string): string {
   return name
     .toLowerCase()
@@ -260,19 +299,14 @@ export function slugifyProviderId(name: string): string {
     .slice(0, 32) || "provider";
 }
 
-/** Lê as chaves de um provedor customizado diretamente do KV. */
 export async function getCustomProviderKeys(env: EnvBindings, providerId: string): Promise<string[]> {
   const kv = env.OMNI_KEYS;
   if (!kv) return [];
   const raw = await kv.get(KV_CUSTOM_KEYS_PREFIX + providerId);
   if (!raw) return [];
-  return raw
-    .split(",")
-    .map((k) => k.trim())
-    .filter(Boolean);
+  return raw.split(",").map((k) => k.trim()).filter(Boolean);
 }
 
-/** Grava as chaves de um provedor customizado no KV (e atualiza o config). */
 export async function setCustomProviderKeys(
   env: EnvBindings,
   providerId: string,
@@ -286,7 +320,6 @@ export async function setCustomProviderKeys(
   } else {
     await kv.put(KV_CUSTOM_KEYS_PREFIX + providerId, clean.join(","));
   }
-  // Sincroniza o config
   await mutateAdminConfig(env, (cfg) => {
     if (cfg.customProviders[providerId]) {
       cfg.customProviders[providerId].apiKeys = clean;
@@ -294,7 +327,6 @@ export async function setCustomProviderKeys(
   });
 }
 
-/** Adiciona chaves a um pool existente (balanceamento). */
 export async function appendProviderKeys(
   env: EnvBindings,
   providerId: string,
@@ -306,16 +338,14 @@ export async function appendProviderKeys(
   return merged;
 }
 
-/** Remove chaves específicas de um pool. */
 export async function removeProviderKeys(
   env: EnvBindings,
   providerId: string,
   keysToRemove: string[]
 ): Promise<string[]> {
   const existing = await getCustomProviderKeys(env, providerId);
-  const remaining = existing.filter((k) => !keysToRemove.includes(k));
+  const removeSet = new Set(keysToRemove.map((k) => k.trim()));
+  const remaining = existing.filter((k) => !removeSet.has(k));
   await setCustomProviderKeys(env, providerId, remaining);
   return remaining;
 }
-
-export const ADMIN_CONSTANTS = { KV_ADMIN_KEY, KV_CUSTOM_KEYS_PREFIX };

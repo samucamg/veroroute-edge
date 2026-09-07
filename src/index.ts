@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { DEFAULT_MODELS_CATALOG } from "./config/constants";
-import { formatAnthropicToOpenAI, formatOpenAIToAnthropic, createOpenAIToAnthropicTransformStream } from "./adapters/anthropic";
+import { formatAnthropicToOpenAI, createOpenAIToAnthropicTransformStream } from "./adapters/anthropic";
 import { applyContextCompression } from "./compression/pipeline";
 import { applyModalityBridge } from "./modality/bridge";
 import { dispatchWithCascade } from "./routing/cascade";
@@ -9,21 +9,31 @@ import { augmentRequestWithWebSearch, dispatchSearch } from "./search/dispatcher
 import { fetchWithJinaReader } from "./search/jina";
 import { handleGenerateImages, handleEditImages } from "./adapters/images";
 import { handleAudioSpeech, handleAudioTranscriptions, handleAudioTranslations } from "./adapters/audio";
-import {
-  exchangeAntigravityCode,
-  getAntigravityAuthUrl,
-} from "./oauth/antigravity";
+import { exchangeAntigravityCode, getAntigravityAuthUrl } from "./oauth/antigravity";
 import { executeMcpTool, handleMcpSse, MCP_TOOLS_LIST } from "./mcp/server";
 import { renderDashboardHtml } from "./ui/dashboard";
 import { adminRouter } from "./admin/routes";
+import {
+  extractBearer,
+  resolvePrincipal,
+  unauthorized,
+  serverMisconfigured,
+  forbidden,
+  isModelAllowed,
+  recordVirtualKeyUse,
+} from "./admin/auth";
+import { getAdminConfig, getAntigravityOAuthCredentials } from "./admin/store";
 import type { AnthropicMessagesRequest } from "./types/anthropic";
-import type { ChatCompletionRequest, ChatCompletionResponse } from "./types/openai";
+import type { ChatCompletionRequest } from "./types/openai";
 import type { EnvBindings } from "./types/provider";
 import type { SearchRequest } from "./types/search";
 
-const app = new Hono<{ Bindings: EnvBindings }>();
+type Variables = { principal: import("./admin/auth").AuthPrincipal };
+const app = new Hono<{ Bindings: EnvBindings; Variables: Variables }>();
 
-// Middleware de CORS aberto para acesso por IDEs e clientes Web
+// ---------------------------------------------------------------------------
+// CORS — required for browser clients and IDEs
+// ---------------------------------------------------------------------------
 app.use(
   "*",
   cors({
@@ -34,46 +44,57 @@ app.use(
   })
 );
 
-import { getAdminConfig, mutateAdminConfig, getAntigravityOAuthCredentials } from "./admin/store";
-
-// Middleware de Autenticação (Suporta AUTH_TOKEN mestre e chaves virtuais sk-vr-...)
+// ---------------------------------------------------------------------------
+// AUTH MIDDLEWARE — /v1/* routes
+// Requires AUTH_TOKEN to be configured (fail-closed). Virtual keys respected.
+// Sets c.set("principal", ...) for downstream enforcement.
+// ---------------------------------------------------------------------------
 app.use("/v1/*", async (c, next) => {
-  const authToken = c.env.AUTH_TOKEN;
-  const authHeader = c.req.header("Authorization") || "";
-  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-
-  // 1. Se coincidir com o AUTH_TOKEN mestre
-  if (authToken && token === authToken) {
-    return await next();
-  }
-
-  // 2. Se for uma chave virtual gerenciada no KV
-  if (token.startsWith("sk-vr-")) {
-    const adminCfg = await getAdminConfig(c.env);
-    const vKey = adminCfg.virtualKeys?.[token];
-    if (vKey && vKey.enabled) {
-      // Persiste o incremento de requisições de forma assíncrona (non-blocking)
-      c.executionCtx.waitUntil(
-        mutateAdminConfig(c.env, (cfg) => {
-          if (cfg.virtualKeys[token]) {
-            cfg.virtualKeys[token].totalRequests = (cfg.virtualKeys[token].totalRequests || 0) + 1;
-            cfg.virtualKeys[token].lastUsedAt = new Date().toISOString();
-          }
-        })
-      );
-      return await next();
-    }
-  }
-
-  // 3. Se AUTH_TOKEN estiver ativo e nenhuma chave válida for fornecida
-  if (authToken) {
-    return c.json({ error: { message: "Não autorizado (chave de API inválida ou revogada)", status: 401 } }, 401);
-  }
-
-  await next();
+  if (!c.env.AUTH_TOKEN) return serverMisconfigured();
+  const token = extractBearer(c);
+  const principal = await resolvePrincipal(c, token);
+  if (!principal) return unauthorized();
+  c.set("principal", principal);
+  // Record usage non-blocking
+  recordVirtualKeyUse(c.env, (p) => c.executionCtx.waitUntil(p as Promise<unknown>), principal);
+  return next();
 });
 
-// Suporte a VS Code Token Aliases: /api/v1/vscode/:token/* -> reescreve rota internamente
+// ---------------------------------------------------------------------------
+// AUTH MIDDLEWARE — /api/oauth/antigravity/* (admin-only, Bearer required)
+// /callback is exempt from auth because Google redirects the browser there.
+// /authorize and /import require the admin Bearer.
+// ---------------------------------------------------------------------------
+app.use("/api/oauth/antigravity/authorize", async (c, next) => {
+  if (!c.env.AUTH_TOKEN) return serverMisconfigured();
+  const principal = await resolvePrincipal(c, extractBearer(c));
+  if (!principal || principal.kind !== "master") return unauthorized("Apenas o admin pode iniciar o fluxo OAuth");
+  return next();
+});
+
+app.use("/api/oauth/antigravity/import", async (c, next) => {
+  if (!c.env.AUTH_TOKEN) return serverMisconfigured();
+  const principal = await resolvePrincipal(c, extractBearer(c));
+  if (!principal || principal.kind !== "master") return unauthorized("Apenas o admin pode importar credenciais");
+  return next();
+});
+
+// ---------------------------------------------------------------------------
+// AUTH MIDDLEWARE — /api/mcp/* (requires ENABLE_MCP_SERVER + Bearer)
+// ---------------------------------------------------------------------------
+app.use("/api/mcp/*", async (c, next) => {
+  if (c.env.ENABLE_MCP_SERVER !== "true") {
+    return c.json({ error: { message: "Servidor MCP desabilitado. Defina ENABLE_MCP_SERVER=true para habilitar." } }, 404);
+  }
+  if (!c.env.AUTH_TOKEN) return serverMisconfigured();
+  const principal = await resolvePrincipal(c, extractBearer(c));
+  if (!principal) return unauthorized();
+  return next();
+});
+
+// ---------------------------------------------------------------------------
+// VS Code token alias: /api/v1/vscode/:token/* → /v1/...
+// ---------------------------------------------------------------------------
 app.all("/api/v1/vscode/:token/*", async (c) => {
   const path = c.req.path.replace(/^\/api\/v1\/vscode\/[^\/]+/, "/v1");
   const url = new URL(c.req.url);
@@ -82,222 +103,206 @@ app.all("/api/v1/vscode/:token/*", async (c) => {
   return app.fetch(newReq, c.env, c.executionCtx);
 });
 
-// --- ROTA RAIZ: DASHBOARD MODERNO GLASSMORPHISM ---
-app.get("/", (c) => {
-  return c.html(renderDashboardHtml());
-});
+// ---------------------------------------------------------------------------
+// ROOT — Dashboard
+// ---------------------------------------------------------------------------
+app.get("/", (c) => c.html(renderDashboardHtml()));
 
-// --- STATUS & HEALTH CHECK ---
-app.get("/health", (c) => {
-  return c.json({
+// ---------------------------------------------------------------------------
+// Health check (public — only status, no config data)
+// ---------------------------------------------------------------------------
+app.get("/health", (c) =>
+  c.json({
     status: "ok",
     engine: "veroroute-edge",
     version: "1.0.0",
     architecture: "Cloudflare Workers Serverless",
-    inspiration: "OmniRoute & VeroRoute",
     timestamp: new Date().toISOString(),
-  });
-});
+  })
+);
 
-// --- OPENAI SPEC: GET /v1/models ---
-app.get("/v1/models", (c) => {
-  return c.json({
-    object: "list",
-    data: DEFAULT_MODELS_CATALOG.map((m) => ({
-      id: m.id,
+// ---------------------------------------------------------------------------
+// GET /v1/models — A-8: includes dynamic combos from admin config
+// ---------------------------------------------------------------------------
+app.get("/v1/models", async (c) => {
+  const adminCfg = await getAdminConfig(c.env);
+  const comboModels = Object.values(adminCfg.combos)
+    .filter((cb) => cb.enabled)
+    .map((cb) => ({
+      id: cb.id,
       object: "model",
       created: 1710000000,
-      owned_by: m.owned_by,
-      permission: [],
-      root: m.id,
-      parent: null,
-      pricing: m.pricing,
-      context_length: m.context_length,
-    })),
-  });
+      owned_by: "veroroute-combos",
+      description: cb.description,
+    }));
+
+  const catalogModels = DEFAULT_MODELS_CATALOG.map((m) => ({
+    id: m.id,
+    object: "model",
+    created: 1710000000,
+    owned_by: m.owned_by,
+    permission: [],
+    root: m.id,
+    parent: null,
+    pricing: m.pricing,
+    context_length: m.context_length,
+  }));
+
+  return c.json({ object: "list", data: [...comboModels, ...catalogModels] });
 });
 
-// --- OPENAI SPEC: POST /v1/chat/completions ---
+// ---------------------------------------------------------------------------
+// POST /v1/chat/completions
+// ---------------------------------------------------------------------------
 app.post("/v1/chat/completions", async (c) => {
   try {
     let body = (await c.req.json()) as ChatCompletionRequest;
 
-    // 1. Ponte de Modalidade (adapta imagens para modelos text-only se necessário)
+    // A-2: enforce allowedModels for virtual keys
+    const principal = c.get("principal") as import("./admin/auth").AuthPrincipal | null | undefined;
+    if (principal && body.model && !isModelAllowed(principal, body.model)) {
+      return forbidden(body.model);
+    }
+
     if (c.env.ENABLE_MODALITY_BRIDGE !== "false") {
       body = await applyModalityBridge(body, c.env);
     }
-
-    // 2. Busca Web e Injeção de RAG (se solicitada no request ou configurada)
     body = await augmentRequestWithWebSearch(body, c.env);
-
-    // 3. Pipeline de Compressão de Contexto e Estilos de Saída
     if (c.env.ENABLE_CONTEXT_COMPRESSION !== "false") {
       body = applyContextCompression(body, body.output_style || c.env.DEFAULT_OUTPUT_STYLE);
     }
-
-    // 4. Despacho com Cascata de Fallback Inteligente (20 estratégias)
-    return await dispatchWithCascade(body, c.env);
-  } catch (err: any) {
-    return c.json(
-      {
-        error: {
-          message: `Erro no processamento do VeroRoute Edge: ${err.message || String(err)}`,
-          type: "gateway_error",
-        },
-      },
-      500
+    const _keyId = (c.get("principal") as { id: string } | null)?.id;
+    return await dispatchWithCascade(body, c.env, _keyId ?? undefined);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return new Response(
+      JSON.stringify({ error: { message: msg, type: "internal_error" } }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
 });
 
-// --- ANTHROPIC SPEC: POST /v1/messages ---
-// Compatibilidade nativa com Claude Code CLI, Cline, Roo Code
+// ---------------------------------------------------------------------------
+// POST /v1/messages (Anthropic native)
+// ---------------------------------------------------------------------------
 app.post("/v1/messages", async (c) => {
   try {
-    const anthropicReq = (await c.req.json()) as AnthropicMessagesRequest;
-
-    // Tradução de Anthropic Messages para formato OpenAI
-    let openAiReq = formatAnthropicToOpenAI(anthropicReq);
-
-    // Aplica pontes e compressão
-    if (c.env.ENABLE_MODALITY_BRIDGE !== "false") {
-      openAiReq = await applyModalityBridge(openAiReq, c.env);
-    }
-    if (c.env.ENABLE_CONTEXT_COMPRESSION !== "false") {
-      openAiReq = applyContextCompression(openAiReq, c.env.DEFAULT_OUTPUT_STYLE);
-    }
-
-    const response = await dispatchWithCascade(openAiReq, c.env);
-
-    // Se for streaming, adapta os chunks SSE de OpenAI de volta para o formato Anthropic
-    if (anthropicReq.stream && response.ok && response.body) {
-      const transform = createOpenAIToAnthropicTransformStream(anthropicReq.model);
-      const transformedStream = response.body.pipeThrough(transform);
-      return new Response(transformedStream, {
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          Connection: "keep-alive",
-        },
+    const body = (await c.req.json()) as AnthropicMessagesRequest;
+    const openAIBody = formatAnthropicToOpenAI(body);
+    const stream = body.stream ?? false;
+    const _princId = (c.get("principal") as { id: string } | null)?.id;
+    const response = await dispatchWithCascade(openAIBody, c.env, _princId ?? undefined);
+    if (stream) {
+      const transformer = createOpenAIToAnthropicTransformStream(body.model);
+      const outStream = response.body ? response.body.pipeThrough(transformer) : null;
+      return new Response(outStream, {
+        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
       });
     }
-
-    // Modo síncrono
-    if (response.ok) {
-      const openAiJson = (await response.json()) as ChatCompletionResponse;
-      const anthropicJson = formatOpenAIToAnthropic(openAiJson);
-      return c.json(anthropicJson);
-    }
-
-    return response;
-  } catch (err: any) {
-    return c.json(
-      {
-        type: "error",
-        error: { type: "api_error", message: err.message || String(err) },
-      },
-      500
-    );
+    const data = (await response.json()) as Record<string, unknown>;
+    return c.json(data);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ type: "error", error: { type: "api_error", message: msg } }, 500);
   }
 });
 
-// --- OPENAI RESPONSES API: POST /v1/responses ---
+// ---------------------------------------------------------------------------
+// POST /v1/responses (partial OpenAI Responses API compatibility)
+// ---------------------------------------------------------------------------
 app.post("/v1/responses", async (c) => {
-  const body = (await c.req.json()) as any;
+  const body = (await c.req.json()) as Record<string, unknown>;
   const chatReq: ChatCompletionRequest = {
-    model: body.model,
-    messages: body.input ? [{ role: "user", content: body.input }] : body.messages || [],
-    temperature: body.temperature,
-    max_tokens: body.max_output_tokens || body.max_tokens,
-    stream: body.stream,
+    model: body.model as string,
+    messages: body.input ? [{ role: "user", content: body.input as string }] : (body.messages as ChatCompletionRequest["messages"]) || [],
+    temperature: body.temperature as number | undefined,
+    max_tokens: (body.max_output_tokens as number | undefined) || (body.max_tokens as number | undefined),
+    stream: body.stream as boolean | undefined,
   };
-  return await dispatchWithCascade(chatReq, c.env);
+  const _rspKeyId = (c.get("principal") as { id: string } | null)?.id;
+  return dispatchWithCascade(chatReq, c.env, _rspKeyId ?? undefined);
 });
 
-// --- BUSCA WEB: POST /v1/search ---
+// ---------------------------------------------------------------------------
+// POST /v1/search
+// ---------------------------------------------------------------------------
 app.post("/v1/search", async (c) => {
   try {
     const body = (await c.req.json()) as SearchRequest;
-    if (!body.query) {
-      return c.json({ error: { message: "Parâmetro 'query' é obrigatório" } }, 400);
-    }
-    const results = await dispatchSearch(body, c.env);
-    return c.json(results);
-  } catch (err: any) {
-    return c.json({ error: { message: err.message } }, 500);
+    if (!body.query) return c.json({ error: { message: "Parâmetro 'query' é obrigatório" } }, 400);
+    return c.json(await dispatchSearch(body, c.env));
+  } catch (err: unknown) {
+    return c.json({ error: { message: err instanceof Error ? err.message : String(err) } }, 500);
   }
 });
 
-// --- JINA READER WEB FETCH: POST /v1/web/fetch ---
+// ---------------------------------------------------------------------------
+// POST /v1/web/fetch
+// ---------------------------------------------------------------------------
 app.post("/v1/web/fetch", async (c) => {
   try {
     const body = (await c.req.json()) as { url: string };
     if (!body.url) return c.json({ error: { message: "Parâmetro 'url' é obrigatório" } }, 400);
-    const result = await fetchWithJinaReader(body.url);
-    return c.json(result);
-  } catch (err: any) {
-    return c.json({ error: { message: err.message } }, 500);
+    return c.json(await fetchWithJinaReader(body.url));
+  } catch (err: unknown) {
+    return c.json({ error: { message: err instanceof Error ? err.message : String(err) } }, 500);
   }
 });
 
-// --- OPENAI IMAGES API: POST /v1/images/generations & /v1/images/edits ---
+// ---------------------------------------------------------------------------
+// Images & Audio
+// ---------------------------------------------------------------------------
 app.post("/v1/images/generations", handleGenerateImages);
 app.post("/v1/images/edits", handleEditImages);
-
-// --- OPENAI AUDIO API: speech, transcriptions, translations ---
 app.post("/v1/audio/speech", handleAudioSpeech);
 app.post("/v1/audio/transcriptions", handleAudioTranscriptions);
 app.post("/v1/audio/translations", handleAudioTranslations);
 
-// --- FLUXO OAUTH: ANTIGRAVITY CLI / GOOGLE CLOUD CODE ASSIST ---
+// ---------------------------------------------------------------------------
+// OAuth — Antigravity / Google Cloud Code Assist
+// /authorize and /import are protected by admin middleware above.
+// /callback is public (Google browser redirect) but validates state nonce.
+// ---------------------------------------------------------------------------
 app.get("/api/oauth/antigravity/authorize", async (c) => {
   const url = new URL(c.req.url);
   const redirectUri = `${url.origin}/api/oauth/antigravity/callback`;
   const { clientId, isConfigured } = await getAntigravityOAuthCredentials(c.env);
 
   if (!isConfigured || !clientId) {
-    return c.html(`
-      <!DOCTYPE html>
-      <html lang="pt-BR">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Antigravity OAuth — Credenciais Necessárias</title>
-        <style>
-          body { font-family: system-ui, -apple-system, sans-serif; background: #0b0f19; color: #f1f5f9; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 1.5rem; box-sizing: border-box; }
-          .card { background: #131b2e; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 2.5rem; max-width: 560px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
-          h2 { color: #f59e0b; margin-top: 0; margin-bottom: 1rem; font-size: 1.5rem; }
-          p { color: #94a3b8; line-height: 1.6; margin-bottom: 1.25rem; text-align: left; }
-          .notice { background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 1rem; color: #fbbf24; font-size: 0.9rem; margin-bottom: 1.5rem; text-align: left; }
-          .btn { display: inline-block; background: #38bdf8; color: #0b0f19; font-weight: 600; padding: 0.75rem 1.75rem; border-radius: 8px; text-decoration: none; transition: all 0.2s; }
-          .btn:hover { background: #0284c7; color: #fff; }
-          code { background: rgba(0,0,0,0.4); color: #38bdf8; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
-        </style>
-      </head>
-      <body>
-        <div class="card">
-          <h2>⚠️ Credenciais OAuth Não Configuradas</h2>
-          <div class="notice">
-            🔒 <strong>Política do GitHub Secret Scanning:</strong> O GitHub bloqueia qualquer tentativa de subir credenciais e client secrets do Google no código-fonte.
-          </div>
-          <p>Para conectar ao Antigravity CLI e usufruir dos modelos Claude 3.7 Sonnet e Gemini 2.5 Pro:</p>
-          <p>1. Acesse o Painel de Administração do VeroRoute Edge na aba <strong>Antigravity OAuth</strong> e informe o seu <code>Client ID</code> e <code>Client Secret</code> (eles ficam salvos com segurança no Cloudflare KV <code>OMNI_KEYS</code>).<br>
-          2. Ou configure via Cloudflare Secrets: <code>npx wrangler secret put ANTIGRAVITY_CLIENT_SECRET</code>.</p>
-          <a class="btn" href="/#tab-antigravity">Abrir Configuração no Painel</a>
-        </div>
-      </body>
-      </html>
-    `, 400);
+    return c.html(`<html><body style="font-family:sans-serif;background:#0b0f19;color:#fff;padding:2rem;text-align:center">
+      <h2 style="color:#f59e0b">Credenciais OAuth não configuradas</h2>
+      <p style="color:#94a3b8">Configure o Client ID e o Client Secret do Google no Painel de Administração (aba Antigravity OAuth).</p>
+    </body></html>`, 400);
   }
 
-  const authUrl = getAntigravityAuthUrl(redirectUri, "agy_auth", clientId);
+  // Generate a one-time state nonce (M-5) scoped to this worker isolate session
+  const state = crypto.randomUUID();
+  if (c.env.OMNI_KEYS) {
+    // Store with 10-minute TTL so stale states auto-expire
+    await c.env.OMNI_KEYS.put(`oauth_state:${state}`, "1", { expirationTtl: 600 });
+  }
+
+  const authUrl = getAntigravityAuthUrl(redirectUri, state, clientId);
   return c.redirect(authUrl);
 });
 
 app.get("/api/oauth/antigravity/callback", async (c) => {
   const code = c.req.query("code");
-  if (!code) {
-    return c.text("Código de autorização não fornecido pelo Google.", 400);
+  const state = c.req.query("state");
+
+  if (!code) return c.text("Código de autorização não fornecido pelo Google.", 400);
+
+  // Validate and consume the state nonce (M-5)
+  if (c.env.OMNI_KEYS) {
+    if (!state) return c.text("Parâmetro state ausente — possível ataque CSRF.", 400);
+    const stored = await c.env.OMNI_KEYS.get(`oauth_state:${state}`);
+    if (!stored) return c.text("State inválido ou expirado. Inicie o fluxo novamente.", 400);
+    await c.env.OMNI_KEYS.delete(`oauth_state:${state}`);
+  }
+
+  if (!c.env.OMNI_KEYS) {
+    // A-10: explicit error when KV unavailable
+    return c.text("OMNI_KEYS não configurado — não é possível persistir tokens OAuth.", 503);
   }
 
   const url = new URL(c.req.url);
@@ -305,85 +310,69 @@ app.get("/api/oauth/antigravity/callback", async (c) => {
 
   try {
     const { clientId, clientSecret } = await getAntigravityOAuthCredentials(c.env);
-    const tokens = await exchangeAntigravityCode(
-      code,
-      redirectUri,
-      clientId,
-      clientSecret || c.env.ANTIGRAVITY_CLIENT_SECRET
-    );
-    if (c.env.OMNI_KEYS) {
-      await c.env.OMNI_KEYS.put("antigravity_tokens", JSON.stringify(tokens));
-    }
-    return c.html(`
-      <html>
-        <body style="font-family:sans-serif; background:#0b0f19; color:#fff; padding:2rem; text-align:center;">
-          <h2 style="color:#10b981;">✅ Antigravity Conectado com Sucesso!</h2>
-          <p style="color:#94a3b8; margin:1rem 0;">Projeto Companion: <code>${tokens.project_id || "Detectado automaticamente"}</code></p>
-          <a href="/" style="color:#38bdf8; text-decoration:none;">⬅ Voltar ao Dashboard do VeroRoute Edge</a>
-        </body>
-      </html>
-    `);
-  } catch (err: any) {
-    return c.text(`Erro na troca de token do Antigravity: ${err.message}`, 500);
+    const tokens = await exchangeAntigravityCode(code, redirectUri, clientId, clientSecret);
+    await c.env.OMNI_KEYS.put("antigravity_tokens", JSON.stringify(tokens));
+    return c.html(`<html><body style="font-family:sans-serif;background:#0b0f19;color:#fff;padding:2rem;text-align:center">
+      <h2 style="color:#10b981">✅ Antigravity Conectado com Sucesso!</h2>
+      <p style="color:#94a3b8;margin:1rem 0">Projeto: <code>${tokens.project_id ?? "auto"}</code></p>
+      <a href="/" style="color:#38bdf8">⬅ Voltar ao Dashboard</a>
+    </body></html>`);
+  } catch (err: unknown) {
+    return c.text(`Erro na troca de token: ${err instanceof Error ? err.message : String(err)}`, 500);
   }
 });
 
-// --- IMPORTAÇÃO MANUAL DE CREDENCIAIS ANTIGRAVITY ---
 app.post("/api/oauth/antigravity/import", async (c) => {
+  if (!c.env.OMNI_KEYS) {
+    // A-10
+    return c.json({ ok: false, error: "OMNI_KEYS não configurado — impossível persistir credenciais." }, 503);
+  }
+
   const body = (await c.req.json()) as { token: string };
   if (!body.token) return c.json({ ok: false, error: "Token vazio" }, 400);
 
   let refreshToken = body.token.trim();
   let projectId = "";
 
-  // Se o usuário colou o JSON completo do Antigravity
   if (refreshToken.startsWith("{")) {
     try {
-      const parsed = JSON.parse(refreshToken);
+      const parsed = JSON.parse(refreshToken) as Record<string, string>;
       refreshToken = parsed.refresh_token || parsed.token || "";
       projectId = parsed.project_id || parsed.cloudaicompanionProject || "";
-    } catch {}
+    } catch { /* not JSON — use as-is */ }
   }
 
-  if (c.env.OMNI_KEYS) {
-    await c.env.OMNI_KEYS.put(
-      "antigravity_tokens",
-      JSON.stringify({
-        refresh_token: refreshToken,
-        project_id: projectId,
-        expires_at: 0, // Força renovação na primeira chamada
-      })
-    );
-  }
-
+  await c.env.OMNI_KEYS.put(
+    "antigravity_tokens",
+    JSON.stringify({ refresh_token: refreshToken, project_id: projectId, expires_at: 0 })
+  );
   return c.json({ ok: true, message: "Credenciais do Antigravity salvas no KV" });
 });
 
-// --- SERVIDOR MCP: SSE & TOOLS ---
-app.get("/api/mcp/sse", (c) => {
-  return handleMcpSse(c.env);
-});
+// ---------------------------------------------------------------------------
+// MCP Server — protected by middleware above (ENABLE_MCP_SERVER + Bearer)
+// ---------------------------------------------------------------------------
+app.get("/api/mcp/sse", (c) => handleMcpSse(c.env));
 
 app.post("/api/mcp/messages", async (c) => {
-  const body = (await c.req.json()) as any;
+  const body = (await c.req.json()) as { method: string; id: unknown; params?: { name: string; arguments: Record<string, unknown> } };
   if (body.method === "tools/list") {
-    return c.json({
-      jsonrpc: "2.0",
-      id: body.id,
-      result: { tools: MCP_TOOLS_LIST },
-    });
+    return c.json({ jsonrpc: "2.0", id: body.id, result: { tools: MCP_TOOLS_LIST } });
   }
   if (body.method === "tools/call") {
     try {
-      const res = await executeMcpTool(body.params.name, body.params.arguments, c.env);
+      const res = await executeMcpTool(body.params!.name, body.params!.arguments, c.env);
       return c.json({ jsonrpc: "2.0", id: body.id, result: res });
-    } catch (e: any) {
-      return c.json({ jsonrpc: "2.0", id: body.id, error: { message: e.message } }, 500);
+    } catch (e: unknown) {
+      return c.json({ jsonrpc: "2.0", id: body.id, error: { message: e instanceof Error ? e.message : String(e) } }, 500);
     }
   }
   return c.json({ jsonrpc: "2.0", id: body.id, result: {} });
 });
 
+// ---------------------------------------------------------------------------
+// Admin API
+// ---------------------------------------------------------------------------
 app.route("/api/admin", adminRouter);
 
 export default app;

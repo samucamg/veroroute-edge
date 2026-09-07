@@ -32,7 +32,9 @@ export type RoutingStrategy =
   | "reset-aware"
   | "lkgp"
   | "session-affinity"
-  | "auto-combo";
+  | "auto-combo"
+  | "random"
+  | "lowest-cost";
 
 export type OutputStyle =
   | "none"
@@ -67,6 +69,8 @@ export interface ProviderConfig {
   supportsTools: boolean;
   supportsVision: boolean;
   rpmLimit?: number;
+  /** Environment variable name that holds the API keys list for this provider */
+  envKey?: string;
 }
 
 export interface ComboRule {
@@ -131,4 +135,9 @@ export interface EnvBindings {
   ANTIGRAVITY_REFRESH_TOKEN?: string;
   ANTIGRAVITY_PROJECT_ID?: string;
   ANTIGRAVITY_ACCESS_TOKEN?: string;
+
+  // Quota sharing config
+  QUOTA_MAX_REQUESTS?: string;
+  QUOTA_WINDOW_SECONDS?: string;
+  QUOTA_POLICY?: string;
 }
