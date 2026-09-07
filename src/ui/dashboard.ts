@@ -242,18 +242,23 @@ export function renderDashboardHtml(): string {
       align-items: center;
       justify-content: space-between;
       gap: 0.6rem;
-      padding: 0.55rem 0.7rem;
-      background: #111827;
-      border: 1px solid rgba(148,163,184,0.3);
+      padding: 0.6rem 0.75rem;
+      background: #f8fafc !important;
+      border: 1px solid #94a3b8;
       border-radius: 6px;
-      color: #f8fafc;
+      color: #0f172a !important;
       font-size: 0.8rem;
     }
-    .model-select-item:hover { background: #1e293b; border-color: rgba(56,189,248,0.6); }
-    .model-select-name { color: #f8fafc !important; opacity: 1; font-weight: 600; }
-    #mpm-discovered-list { background: #0b1220; padding: 0.5rem; border: 1px solid rgba(148,163,184,0.22); border-radius: 8px; }
-    #mpm-model-search { color: #f8fafc !important; background: #111827 !important; }
-    #mpm-model-search::placeholder { color: #94a3b8 !important; opacity: 1; }
+    .model-select-item:hover { background: #e2e8f0 !important; border-color: #38bdf8; }
+    .model-select-item * { color: #0f172a; }
+    .model-select-name { color: #020617 !important; opacity: 1 !important; font-weight: 700; }
+    #mpm-discovered-list { background: #e2e8f0 !important; padding: 0.5rem; border: 1px solid #94a3b8; border-radius: 8px; }
+    #mpm-model-search, #adm-model-search { color: #0f172a !important; background: #ffffff !important; border-color: #94a3b8 !important; }
+    #mpm-model-search::placeholder, #adm-model-search::placeholder { color: #475569 !important; opacity: 1; }
+    .admin-model-result { display:flex; justify-content:space-between; align-items:center; gap:0.6rem; padding:0.65rem 0.75rem; margin-bottom:0.35rem; background:#f8fafc !important; color:#0f172a !important; border:1px solid #94a3b8; border-radius:6px; }
+    .admin-model-result * { color:#0f172a; }
+    #adm-model-results { background:#e2e8f0; padding:0.5rem; border-radius:8px; }
+    #adm-model-results:empty { display:none; }
 
     main {
       flex: 1;
@@ -2083,7 +2088,7 @@ dsh --model combo-super-payload
         const data = await res.json();
         let html = '';
         (data.models || []).forEach(function(m) {
-          html += '<div style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem; border-bottom:1px solid var(--card-border);">' +
+          html += '<div class="admin-model-result">' +
             '<span style="font-size:0.85rem;">' + escapeHtml(m.provider) + ' / <strong>' + escapeHtml(m.id) + '</strong></span>' +
             '<span>' + (m.enabled ? '<span style="color:var(--emerald); font-size:0.75rem;">ativo</span>' : '<span style="color:var(--rose); font-size:0.75rem;">excluído</span>') + '</span>' +
           '</div>';
