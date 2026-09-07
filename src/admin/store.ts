@@ -44,6 +44,30 @@ export interface VirtualApiKey {
   enabled: boolean;
 }
 
+export interface ComboTarget {
+  provider: string;
+  model: string;
+  weight?: number;
+  priority?: number;
+}
+
+export interface ComboConfig {
+  id: string;                 // Nome do combo (ex: "combo-super-payload") que atua como o model ID
+  name: string;               // Nome descritivo
+  description?: string;
+  strategy: "priority" | "round-robin" | "p2c" | "lowest-cost" | "random";
+  targets: ComboTarget[];
+  enabled: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AntigravityOAuthConfig {
+  clientId: string;
+  clientSecret: string;
+  updatedAt?: string;
+}
+
 export interface AdminConfig {
   version: number;
   // Habilitar/desabilitar provedores existentes: id -> { enabled }
@@ -58,6 +82,10 @@ export interface AdminConfig {
   searchConfig: AdminSearchConfig;
   // Chaves de API virtuais para clientes externos
   virtualKeys: Record<string, VirtualApiKey>;
+  // Combos Dinâmicos de Modelos e Failover
+  combos: Record<string, ComboConfig>;
+  // Configuração de Credenciais OAuth do Antigravity CLI (persistidas no KV, fora do Git)
+  antigravityConfig?: AntigravityOAuthConfig;
 }
 
 const DEFAULT_ADMIN_CONFIG: AdminConfig = {
@@ -74,6 +102,50 @@ const DEFAULT_ADMIN_CONFIG: AdminConfig = {
     braveApiKey: "",
   },
   virtualKeys: {},
+  combos: {
+    "omni-free": {
+      id: "omni-free",
+      name: "Omni Free Tier Cascade",
+      description: "Cascata de failover 100% gratuita com Gemini, Groq, Cerebras e Qwen.",
+      strategy: "priority",
+      targets: [
+        { provider: "gemini", model: "gemini-2.5-flash" },
+        { provider: "groq", model: "llama-3.3-70b-versatile" },
+        { provider: "cerebras", model: "llama3.3-70b" },
+        { provider: "alibaba", model: "qwen-plus" },
+        { provider: "cloudflare-ai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
+        { provider: "openrouter", model: "meta-llama/llama-3.3-70b-instruct:free" },
+        { provider: "pollinations", model: "openai" },
+      ],
+      enabled: true,
+    },
+    "omni-code": {
+      id: "omni-code",
+      name: "Omni Coding Specialist",
+      description: "Especialista em programação e agentes CLI (Claude 3.7, Qwen 2.5 Coder, Gemini 2.5 Pro).",
+      strategy: "priority",
+      targets: [
+        { provider: "antigravity", model: "gemini-2.5-pro" },
+        { provider: "1min", model: "1min/gpt-4o" },
+        { provider: "alibaba", model: "qwen2.5-coder-32b-instruct" },
+        { provider: "cloudflare-ai", model: "@cf/qwen/qwen2.5-coder-32b-instruct" },
+        { provider: "groq", model: "llama-3.3-70b-versatile" },
+        { provider: "cerebras", model: "llama3.3-70b" },
+      ],
+      enabled: true,
+    },
+    "omni-fast": {
+      id: "omni-fast",
+      name: "Omni Speed Champions (500-2000 t/s)",
+      description: "Modelos ultra-rápidos com menor latência para auto-complete e tarefas interativas.",
+      strategy: "p2c",
+      targets: [
+        { provider: "cerebras", model: "llama3.3-70b" },
+        { provider: "groq", model: "llama-3.3-70b-versatile" },
+      ],
+      enabled: true,
+    },
+  },
 };
 
 /** Chave principal no KV OMNI_KEYS onde o config admin é persistido */
@@ -114,6 +186,8 @@ export async function getAdminConfig(env: EnvBindings): Promise<AdminConfig> {
         customProviders: { ...(parsed.customProviders || {}) },
         modelStates: { ...(parsed.modelStates || {}) },
         customModels: { ...(parsed.customModels || {}) },
+        combos: { ...DEFAULT_ADMIN_CONFIG.combos, ...(parsed.combos || {}) },
+        antigravityConfig: parsed.antigravityConfig || undefined,
       };
       cache = { data: merged, ts: now };
       return cloneConfig(merged);
@@ -124,6 +198,32 @@ export async function getAdminConfig(env: EnvBindings): Promise<AdminConfig> {
 
   cache = { data: DEFAULT_ADMIN_CONFIG, ts: now };
   return cloneConfig(DEFAULT_ADMIN_CONFIG);
+}
+
+/**
+ * Recupera as credenciais de OAuth do Antigravity CLI com segurança
+ * Prioridade: KV OMNI_KEYS -> env vars -> fallback
+ */
+export async function getAntigravityOAuthCredentials(
+  env: EnvBindings
+): Promise<{ clientId: string; clientSecret: string; isConfigured: boolean }> {
+  const cfg = await getAdminConfig(env);
+  const fromKv = cfg.antigravityConfig;
+  const clientId =
+    fromKv?.clientId?.trim() ||
+    (typeof env.ANTIGRAVITY_CLIENT_ID === "string" ? env.ANTIGRAVITY_CLIENT_ID.trim() : "");
+  const clientSecret =
+    fromKv?.clientSecret?.trim() ||
+    (typeof env.ANTIGRAVITY_CLIENT_SECRET === "string" ? env.ANTIGRAVITY_CLIENT_SECRET.trim() : "");
+
+  const isConfigured = Boolean(
+    clientId &&
+    clientSecret &&
+    clientId !== "YOUR_GOOGLE_CLIENT_ID_HERE" &&
+    clientSecret !== "YOUR_GOOGLE_CLIENT_SECRET_HERE"
+  );
+
+  return { clientId, clientSecret, isConfigured };
 }
 
 /**

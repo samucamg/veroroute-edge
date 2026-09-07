@@ -1,4 +1,5 @@
 import { ANTIGRAVITY_PUBLIC_CONFIG } from "@/config/constants";
+import { getAntigravityOAuthCredentials } from "@/admin/store";
 import type { EnvBindings } from "@/types/provider";
 
 export interface AntigravityTokens {
@@ -12,9 +13,19 @@ export interface AntigravityTokens {
 /**
  * Gera a URL de autorização do Google OAuth para o Antigravity CLI
  */
-export function getAntigravityAuthUrl(redirectUri: string, state = "agy_auth"): string {
+export function getAntigravityAuthUrl(
+  redirectUri: string,
+  state = "agy_auth",
+  clientId = ANTIGRAVITY_PUBLIC_CONFIG.clientId
+): string {
+  if (!clientId || clientId === "YOUR_GOOGLE_CLIENT_ID_HERE") {
+    throw new Error(
+      "ANTIGRAVITY_CREDENTIALS_REQUIRED: O Client ID do Google OAuth não foi configurado. Configure no Painel de Administração (aba Antigravity OAuth) ou via variável ANTIGRAVITY_CLIENT_ID."
+    );
+  }
+
   const params = new URLSearchParams({
-    client_id: ANTIGRAVITY_PUBLIC_CONFIG.clientId,
+    client_id: clientId,
     response_type: "code",
     redirect_uri: redirectUri,
     scope: ANTIGRAVITY_PUBLIC_CONFIG.scopes.join(" "),
@@ -31,11 +42,18 @@ export function getAntigravityAuthUrl(redirectUri: string, state = "agy_auth"): 
 export async function exchangeAntigravityCode(
   code: string,
   redirectUri: string,
+  clientId = ANTIGRAVITY_PUBLIC_CONFIG.clientId,
   clientSecret = ANTIGRAVITY_PUBLIC_CONFIG.clientSecret
 ): Promise<AntigravityTokens> {
+  if (!clientId || clientId === "YOUR_GOOGLE_CLIENT_ID_HERE" || !clientSecret || clientSecret === "YOUR_GOOGLE_CLIENT_SECRET_HERE") {
+    throw new Error(
+      "ANTIGRAVITY_CREDENTIALS_REQUIRED: Credenciais de OAuth do Google não configuradas. Configure o Client ID e Client Secret no Painel de Administração."
+    );
+  }
+
   const bodyParams: Record<string, string> = {
     grant_type: "authorization_code",
-    client_id: ANTIGRAVITY_PUBLIC_CONFIG.clientId,
+    client_id: clientId,
     client_secret: clientSecret,
     code,
     redirect_uri: redirectUri,
@@ -83,11 +101,12 @@ export async function exchangeAntigravityCode(
  */
 export async function refreshAntigravityToken(
   refreshToken: string,
+  clientId = ANTIGRAVITY_PUBLIC_CONFIG.clientId,
   clientSecret = ANTIGRAVITY_PUBLIC_CONFIG.clientSecret
 ): Promise<{ access_token: string; expires_at: number }> {
   const bodyParams: Record<string, string> = {
     grant_type: "refresh_token",
-    client_id: ANTIGRAVITY_PUBLIC_CONFIG.clientId,
+    client_id: clientId,
     client_secret: clientSecret,
     refresh_token: refreshToken,
   };
@@ -170,6 +189,8 @@ function extractProjectId(data: any): string {
 export async function getValidAntigravityAccessToken(
   env: EnvBindings
 ): Promise<{ accessToken: string; projectId: string }> {
+  const { clientId, clientSecret } = await getAntigravityOAuthCredentials(env);
+
   // 1. Verifica no KV se existe token salvo
   if (env.OMNI_KEYS) {
     const rawSaved = await env.OMNI_KEYS.get("antigravity_tokens");
@@ -188,7 +209,8 @@ export async function getValidAntigravityAccessToken(
         if (tokens.refresh_token) {
           const renewed = await refreshAntigravityToken(
             tokens.refresh_token,
-            env.ANTIGRAVITY_CLIENT_SECRET
+            clientId,
+            clientSecret || env.ANTIGRAVITY_CLIENT_SECRET
           );
           tokens.access_token = renewed.access_token;
           tokens.expires_at = renewed.expires_at;
@@ -211,7 +233,8 @@ export async function getValidAntigravityAccessToken(
   if (env.ANTIGRAVITY_REFRESH_TOKEN) {
     const renewed = await refreshAntigravityToken(
       env.ANTIGRAVITY_REFRESH_TOKEN,
-      env.ANTIGRAVITY_CLIENT_SECRET
+      clientId,
+      clientSecret || env.ANTIGRAVITY_CLIENT_SECRET
     );
     const projectId =
       env.ANTIGRAVITY_PROJECT_ID ||

@@ -12,48 +12,68 @@ import { applyRoutingStrategy, recordCandidateSuccess, type TargetCandidate } fr
 import type { ChatCompletionRequest } from "@/types/openai";
 import type { EnvBindings } from "@/types/provider";
 
+import type { AdminConfig } from "@/admin/store";
+
 /**
- * Resolve a lista de candidatos a partir do modelo solicitado ou do combo
+ * Resolve a lista de candidatos a partir do modelo solicitado ou de combos dinâmicos (onde o nome do combo é o modelo)
  */
-export function resolveCandidates(request: ChatCompletionRequest): TargetCandidate[] {
+export function resolveCandidates(
+  request: ChatCompletionRequest,
+  adminCfg?: AdminConfig
+): { candidates: TargetCandidate[]; comboStrategy?: string } {
   const model = request.model;
 
-  // 1. Se for um Combo definido no VeroRoute Edge
+  // 1. Se for um Combo Dinâmico definido no Painel de Administração (persistido no KV)
+  if (adminCfg?.combos && adminCfg.combos[model] && adminCfg.combos[model].enabled) {
+    const combo = adminCfg.combos[model];
+    return {
+      candidates: combo.targets.map((t) => ({
+        provider: t.provider,
+        model: t.model,
+      })),
+      comboStrategy: combo.strategy,
+    };
+  }
+
+  // 2. Se for um Combo padrão estático
   if (DEFAULT_COMBOS[model as keyof typeof DEFAULT_COMBOS]) {
     const combo = DEFAULT_COMBOS[model as keyof typeof DEFAULT_COMBOS];
-    return combo.targets.map((t) => ({
-      provider: t.provider,
-      model: t.model,
-    }));
+    return {
+      candidates: combo.targets.map((t) => ({
+        provider: t.provider,
+        model: t.model,
+      })),
+      comboStrategy: combo.strategy,
+    };
   }
 
-  // 2. Se o modelo tiver prefixo explícito do provedor
+  // 3. Se o modelo tiver prefixo explícito do provedor
   if (model.startsWith("antigravity/")) {
-    return [{ provider: "antigravity", model }];
+    return { candidates: [{ provider: "antigravity", model }] };
   }
   if (model.startsWith("1min/")) {
-    return [{ provider: "1min", model }];
+    return { candidates: [{ provider: "1min", model }] };
   }
   if (model.startsWith("@cf/")) {
-    return [{ provider: "cloudflare-ai", model }];
+    return { candidates: [{ provider: "cloudflare-ai", model }] };
   }
   if (model.startsWith("cerebras/")) {
-    return [{ provider: "cerebras", model }];
+    return { candidates: [{ provider: "cerebras", model }] };
   }
   if (model.startsWith("groq/")) {
-    return [{ provider: "groq", model }];
+    return { candidates: [{ provider: "groq", model }] };
   }
   if (model.startsWith("gemini/")) {
-    return [{ provider: "gemini", model }];
+    return { candidates: [{ provider: "gemini", model }] };
   }
   if (model.startsWith("azure/")) {
-    return [{ provider: "azure", model }];
+    return { candidates: [{ provider: "azure", model }] };
   }
   if (model.startsWith("bedrock/")) {
-    return [{ provider: "bedrock", model }];
+    return { candidates: [{ provider: "bedrock", model }] };
   }
 
-  // 3. Procura no catálogo padrão
+  // 4. Procura no catálogo padrão
   const matched = DEFAULT_MODELS_CATALOG.find((m) => m.id === model);
   if (matched && matched.provider) {
     const primary: TargetCandidate = {
@@ -74,16 +94,18 @@ export function resolveCandidates(request: ChatCompletionRequest): TargetCandida
       model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     });
 
-    return [primary, ...fallbacks];
+    return { candidates: [primary, ...fallbacks] };
   }
 
-  // 4. Default: Procura na Groq, Gemini ou Cloudflare
-  return [
-    { provider: "groq", model: "llama-3.3-70b-versatile" },
-    { provider: "gemini", model: "gemini-2.5-flash" },
-    { provider: "cloudflare-ai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
-    { provider: "pollinations", model: "openai" },
-  ];
+  // 5. Default: Procura na Groq, Gemini, Cloudflare ou Pollinations
+  return {
+    candidates: [
+      { provider: "groq", model: "llama-3.3-70b-versatile" },
+      { provider: "gemini", model: "gemini-2.5-flash" },
+      { provider: "cloudflare-ai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
+      { provider: "pollinations", model: "openai" },
+    ],
+  };
 }
 
 /**
@@ -150,8 +172,8 @@ export async function dispatchWithCascade(
       supportsVision: cp.supportsVision,
     });
   }
-  const initialCandidates = resolveCandidates(request);
-  const strategy = request.routing_strategy || env.DEFAULT_ROUTING_STRATEGY || "priority";
+  const { candidates: initialCandidates, comboStrategy } = resolveCandidates(request, adminCfg);
+  const strategy = request.routing_strategy || (comboStrategy as any) || env.DEFAULT_ROUTING_STRATEGY || "priority";
   const orderedCandidates = await applyAdminRouting(
     applyRoutingStrategy(initialCandidates, strategy, request.user),
     request,

@@ -34,7 +34,7 @@ app.use(
   })
 );
 
-import { getAdminConfig, mutateAdminConfig } from "./admin/store";
+import { getAdminConfig, mutateAdminConfig, getAntigravityOAuthCredentials } from "./admin/store";
 
 // Middleware de Autenticação (Suporta AUTH_TOKEN mestre e chaves virtuais sk-vr-...)
 app.use("/v1/*", async (c, next) => {
@@ -250,10 +250,47 @@ app.post("/v1/audio/transcriptions", handleAudioTranscriptions);
 app.post("/v1/audio/translations", handleAudioTranslations);
 
 // --- FLUXO OAUTH: ANTIGRAVITY CLI / GOOGLE CLOUD CODE ASSIST ---
-app.get("/api/oauth/antigravity/authorize", (c) => {
+app.get("/api/oauth/antigravity/authorize", async (c) => {
   const url = new URL(c.req.url);
   const redirectUri = `${url.origin}/api/oauth/antigravity/callback`;
-  const authUrl = getAntigravityAuthUrl(redirectUri);
+  const { clientId, isConfigured } = await getAntigravityOAuthCredentials(c.env);
+
+  if (!isConfigured || !clientId) {
+    return c.html(`
+      <!DOCTYPE html>
+      <html lang="pt-BR">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Antigravity OAuth — Credenciais Necessárias</title>
+        <style>
+          body { font-family: system-ui, -apple-system, sans-serif; background: #0b0f19; color: #f1f5f9; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 1.5rem; box-sizing: border-box; }
+          .card { background: #131b2e; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 2.5rem; max-width: 560px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+          h2 { color: #f59e0b; margin-top: 0; margin-bottom: 1rem; font-size: 1.5rem; }
+          p { color: #94a3b8; line-height: 1.6; margin-bottom: 1.25rem; text-align: left; }
+          .notice { background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 1rem; color: #fbbf24; font-size: 0.9rem; margin-bottom: 1.5rem; text-align: left; }
+          .btn { display: inline-block; background: #38bdf8; color: #0b0f19; font-weight: 600; padding: 0.75rem 1.75rem; border-radius: 8px; text-decoration: none; transition: all 0.2s; }
+          .btn:hover { background: #0284c7; color: #fff; }
+          code { background: rgba(0,0,0,0.4); color: #38bdf8; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <h2>⚠️ Credenciais OAuth Não Configuradas</h2>
+          <div class="notice">
+            🔒 <strong>Política do GitHub Secret Scanning:</strong> O GitHub bloqueia qualquer tentativa de subir credenciais e client secrets do Google no código-fonte.
+          </div>
+          <p>Para conectar ao Antigravity CLI e usufruir dos modelos Claude 3.7 Sonnet e Gemini 2.5 Pro:</p>
+          <p>1. Acesse o Painel de Administração do VeroRoute Edge na aba <strong>Antigravity OAuth</strong> e informe o seu <code>Client ID</code> e <code>Client Secret</code> (eles ficam salvos com segurança no Cloudflare KV <code>OMNI_KEYS</code>).<br>
+          2. Ou configure via Cloudflare Secrets: <code>npx wrangler secret put ANTIGRAVITY_CLIENT_SECRET</code>.</p>
+          <a class="btn" href="/#tab-antigravity">Abrir Configuração no Painel</a>
+        </div>
+      </body>
+      </html>
+    `, 400);
+  }
+
+  const authUrl = getAntigravityAuthUrl(redirectUri, "agy_auth", clientId);
   return c.redirect(authUrl);
 });
 
@@ -267,7 +304,13 @@ app.get("/api/oauth/antigravity/callback", async (c) => {
   const redirectUri = `${url.origin}/api/oauth/antigravity/callback`;
 
   try {
-    const tokens = await exchangeAntigravityCode(code, redirectUri, c.env.ANTIGRAVITY_CLIENT_SECRET);
+    const { clientId, clientSecret } = await getAntigravityOAuthCredentials(c.env);
+    const tokens = await exchangeAntigravityCode(
+      code,
+      redirectUri,
+      clientId,
+      clientSecret || c.env.ANTIGRAVITY_CLIENT_SECRET
+    );
     if (c.env.OMNI_KEYS) {
       await c.env.OMNI_KEYS.put("antigravity_tokens", JSON.stringify(tokens));
     }

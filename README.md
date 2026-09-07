@@ -265,13 +265,62 @@ docker compose up -d
 
 ---
 
-## 🔀 Combos de Roteamento Inteligente
+---
 
-| Combo | Descrição | Provedores na Cascata |
+## 🔀 Combos de Roteamento Inteligente (O Nome do Combo é o Modelo)
+
+No VeroRoute Edge, **o nome do combo atua diretamente como o identificador do modelo**. Ao enviar uma requisição com `"model": "nome-do-combo"`, o gateway executa a cascata entre os alvos cadastrados de acordo com a estratégia definida:
+
+| Combo Padrão | Estratégia | Modelos e Provedores na Cascata |
 | :--- | :--- | :--- |
-| `omni-free` | 100% Gratuito | Gemini 2.5 Flash ➔ Groq ➔ Cerebras ➔ Cloudflare AI ➔ OpenRouter ➔ Pollinations |
-| `omni-code` | Especialista em Código | Antigravity Gemini 2.5 Pro ➔ Qwen 2.5 Coder ➔ Groq ➔ Cerebras |
-| `omni-fast` | Velocidade Máxima (>500 t/s) | Cerebras (P2C) + Groq (P2C) balanceado |
+| `omni-free` | Prioridade / Failover | Gemini 2.5 Flash ➔ Groq ➔ Cerebras ➔ Cloudflare AI ➔ OpenRouter ➔ Pollinations |
+| `omni-code` | Prioridade / Failover | Antigravity Gemini 2.5 Pro ➔ 1min.ai GPT-4o ➔ Qwen 2.5 Coder ➔ Groq ➔ Cerebras |
+| `omni-fast` | P2C Load-Balance | Cerebras (2.000 t/s) + Groq (500 t/s) balanceado por menor carga |
+
+### 🛠️ Gerenciamento de Combos no Dashboard:
+1. Acesse a aba **Combos & Quotas** no Dashboard.
+2. Clique em **+ Novo Combo** para definir o identificador do modelo (ex: `combo-super-payload`), descrição e estratégia (`priority`, `round-robin`, `p2c`, `lowest-cost`, `random`).
+3. Adicione ou exclua modelos da lista a qualquer momento.
+4. Clique em **▶️ Testar Modelos** para realizar testes de ping/latência em tempo real de cada modelo do combo.
+
+---
+
+## 🤖 Integração com DeepSeek Harness (DSH)
+
+O **DeepSeek Harness (`dsh`)** é o framework oficial e modular de orquestração de agentes autônomos da DeepSeek AI (`npx @deepseek-ai/dsh web` ou CLI `dsh`).
+
+### Como Usar com o VeroRoute Edge:
+```bash
+# 1. Aponte os endpoints do DSH para o seu Worker:
+export OPENAI_BASE_URL="https://seu-worker.workers.dev/v1"
+export OPENAI_API_KEY="sk-vr-seu-token" # Chave virtual do painel ou AUTH_TOKEN
+export DEEPSEEK_API_BASE="https://seu-worker.workers.dev/v1"
+
+# 2. Inicie o DeepSeek Harness passando qualquer Combo como modelo:
+npx @deepseek-ai/dsh web --model omni-code
+
+# Ou utilize combos customizados via CLI:
+dsh --model combo-super-payload
+```
+
+---
+
+## 🔐 Conexão OAuth com Antigravity CLI & Solução GitHub Secret Scanning
+
+O GitHub possui um scanner automatizado que **bloqueia commits contendo segredos do Google OAuth** (`GOCSPX-...`). Para manter seu repositório 100% seguro e sem bloqueios de commit:
+
+1. **Configuração via Painel de Administração:**
+   - Acesse o Dashboard na aba **Antigravity OAuth**.
+   - Insira o seu `Client ID` e `Client Secret` do Google Cloud Code Assist.
+   - Clique em **Salvar Credenciais no KV OMNI_KEYS**.
+   - As credenciais ficam salvas estritamente no seu Cloudflare KV, sem nunca tocar no código Git.
+2. **Configuração via Cloudflare Secrets (Wrangler):**
+   ```bash
+   npx wrangler secret put ANTIGRAVITY_CLIENT_ID
+   npx wrangler secret put ANTIGRAVITY_CLIENT_SECRET
+   ```
+3. **Importação Manual de Tokens (Sem Navegador):**
+   - Cole o conteúdo de `~/.config/antigravity/tokens.json` ou seu `refresh_token` na área de importação do painel para conexão imediata com os modelos Claude 3.7 Sonnet e Gemini 2.5 Pro.
 
 ---
 
@@ -285,6 +334,8 @@ docker compose up -d
 | Chave / Segredo | Obrigatório? | Descrição |
 |---|:---:|---|
 | **`AUTH_TOKEN`** | Opcional | Senha mestra para proteger o seu gateway. Se vazio, o acesso fica público. |
+| **`ANTIGRAVITY_CLIENT_SECRET`** | Opcional | Client Secret do Google OAuth (evite commitar no git; use o painel ou secret). |
+| **`ANTIGRAVITY_CLIENT_ID`** | Opcional | Client ID do Google OAuth para o Antigravity CLI. |
 | **`GEMINI_API_KEYS`** | Opcional | Chaves do Google Gemini (AI Studio). Múltiplas chaves separadas por vírgula. |
 | **`GROQ_API_KEYS`** | Opcional | Chaves da Groq Cloud para modelos ultrarrápidos (Llama 3.3). |
 | **`CEREBRAS_API_KEYS`** | Opcional | Chaves da Cerebras Cloud (> 2.000 t/s). |

@@ -8,6 +8,8 @@ import {
   removeProviderKeys,
   getCustomProviderKeys,
   type CustomProvider,
+  type ComboConfig,
+  type ComboTarget,
 } from "./store";
 import type { EnvBindings } from "@/types/provider";
 
@@ -489,6 +491,241 @@ adminRouter.delete("/virtual-keys/:id", async (c) => {
     delete cfg.virtualKeys[id];
   });
   return c.json({ ok: true, id, virtualKeys: Object.values(cfg.virtualKeys) });
+});
+
+// ==========================================
+// COMBOS & QUOTAS (COMBO STUDIO LIGHT)
+// ==========================================
+adminRouter.get("/combos", async (c) => {
+  const cfg = await getAdminConfig(c.env);
+  const combos = Object.values(cfg.combos || {});
+  return c.json({ ok: true, combos });
+});
+
+adminRouter.post("/combos", async (c) => {
+  const body = (await c.req.json()) as Partial<ComboConfig>;
+  const rawId = body.id?.trim() || body.name?.trim();
+  if (!rawId) {
+    return c.json({ error: { message: "ID/Nome do Combo é obrigatório", type: "validation" } }, 400);
+  }
+
+  const id = slugifyProviderId(rawId);
+  const name = body.name?.trim() || id;
+  const description = body.description?.trim() || "";
+  const strategy = body.strategy || "priority";
+  const targets = Array.isArray(body.targets) ? body.targets : [];
+
+  const cfg = await mutateAdminConfig(c.env, (cfg) => {
+    const existing = cfg.combos[id];
+    cfg.combos[id] = {
+      id,
+      name,
+      description,
+      strategy,
+      targets,
+      enabled: body.enabled !== false,
+      createdAt: existing?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  });
+
+  return c.json({ ok: true, combo: cfg.combos[id] });
+});
+
+adminRouter.delete("/combos/:id", async (c) => {
+  const id = c.req.param("id");
+  const cfg = await mutateAdminConfig(c.env, (cfg) => {
+    delete cfg.combos[id];
+  });
+  return c.json({ ok: true, id, combos: Object.values(cfg.combos) });
+});
+
+adminRouter.post("/combos/:id/models", async (c) => {
+  const id = c.req.param("id");
+  const body = (await c.req.json()) as { provider: string; model: string; weight?: number; priority?: number };
+  if (!body.provider || !body.model) {
+    return c.json({ error: { message: "provider e model são obrigatórios", type: "validation" } }, 400);
+  }
+
+  const cfg = await mutateAdminConfig(c.env, (cfg) => {
+    if (!cfg.combos[id]) {
+      cfg.combos[id] = {
+        id,
+        name: id,
+        description: "",
+        strategy: "priority",
+        targets: [],
+        enabled: true,
+        createdAt: new Date().toISOString(),
+      };
+    }
+    const exists = cfg.combos[id].targets.some(
+      (t) => t.provider === body.provider && t.model === body.model
+    );
+    if (!exists) {
+      cfg.combos[id].targets.push({
+        provider: body.provider,
+        model: body.model,
+        weight: body.weight,
+        priority: body.priority,
+      });
+      cfg.combos[id].updatedAt = new Date().toISOString();
+    }
+  });
+
+  return c.json({ ok: true, id, combo: cfg.combos[id] });
+});
+
+adminRouter.delete("/combos/:id/models", async (c) => {
+  const id = c.req.param("id");
+  const body = (await c.req.json()) as { provider: string; model: string };
+  if (!body.provider || !body.model) {
+    return c.json({ error: { message: "provider e model são obrigatórios", type: "validation" } }, 400);
+  }
+
+  const cfg = await mutateAdminConfig(c.env, (cfg) => {
+    if (cfg.combos[id]) {
+      cfg.combos[id].targets = cfg.combos[id].targets.filter(
+        (t) => !(t.provider === body.provider && t.model === body.model)
+      );
+      cfg.combos[id].updatedAt = new Date().toISOString();
+    }
+  });
+
+  return c.json({ ok: true, id, combo: cfg.combos[id] });
+});
+
+adminRouter.post("/combos/test", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    comboId?: string;
+    targets?: Array<{ provider: string; model: string }>;
+  };
+
+  const cfg = await getAdminConfig(c.env);
+  let targetsToTest: Array<{ provider: string; model: string }> = [];
+
+  if (body.targets && Array.isArray(body.targets) && body.targets.length > 0) {
+    targetsToTest = body.targets;
+  } else if (body.comboId && cfg.combos[body.comboId]) {
+    targetsToTest = cfg.combos[body.comboId].targets;
+  } else {
+    targetsToTest = [
+      { provider: "gemini", model: "gemini-2.5-flash" },
+      { provider: "groq", model: "llama-3.3-70b-versatile" },
+      { provider: "cerebras", model: "llama3.3-70b" },
+      { provider: "cloudflare-ai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
+    ];
+  }
+
+  const { dispatchWithCascade } = await import("@/routing/cascade");
+
+  const results: Array<{
+    provider: string;
+    model: string;
+    status: number;
+    latency_ms: number;
+    success: boolean;
+    error?: string;
+    output?: string;
+  }> = [];
+
+  for (const target of targetsToTest) {
+    const start = Date.now();
+    try {
+      const testReq = {
+        model: `${target.provider}/${target.model}`,
+        messages: [{ role: "user" as const, content: "Respond strictly with 'OK'" }],
+        max_tokens: 5,
+        temperature: 0,
+      };
+
+      const res = await dispatchWithCascade(testReq as any, c.env);
+      const latency = Date.now() - start;
+
+      if (res.ok) {
+        let text = "";
+        try {
+          const json = (await res.json()) as any;
+          text = json.choices?.[0]?.message?.content || "OK";
+        } catch {
+          text = "OK";
+        }
+        results.push({
+          provider: target.provider,
+          model: target.model,
+          status: res.status,
+          latency_ms: latency,
+          success: true,
+          output: text.trim().slice(0, 30),
+        });
+      } else {
+        const errText = await res.text();
+        results.push({
+          provider: target.provider,
+          model: target.model,
+          status: res.status,
+          latency_ms: latency,
+          success: false,
+          error: errText.slice(0, 150),
+        });
+      }
+    } catch (err: any) {
+      results.push({
+        provider: target.provider,
+        model: target.model,
+        status: 500,
+        latency_ms: Date.now() - start,
+        success: false,
+        error: err.message,
+      });
+    }
+  }
+
+  return c.json({ ok: true, results });
+});
+
+// ==========================================
+// CONFIGURAÇÃO OAUTH DO ANTIGRAVITY NO KV
+// ==========================================
+adminRouter.get("/antigravity/status", async (c) => {
+  const { getAntigravityOAuthCredentials } = await import("./store");
+  const { clientId, isConfigured } = await getAntigravityOAuthCredentials(c.env);
+  let hasTokens = false;
+  if (c.env.OMNI_KEYS) {
+    const saved = await c.env.OMNI_KEYS.get("antigravity_tokens");
+    hasTokens = Boolean(saved);
+  }
+  return c.json({
+    ok: true,
+    isConfigured,
+    hasClientId: Boolean(clientId),
+    maskedClientId: clientId ? clientId.slice(0, 8) + "..." + clientId.slice(-6) : "",
+    hasTokens,
+  });
+});
+
+adminRouter.post("/antigravity/config", async (c) => {
+  const body = (await c.req.json()) as { clientId: string; clientSecret: string };
+  const clientId = body.clientId?.trim();
+  const clientSecret = body.clientSecret?.trim();
+
+  if (!clientId || !clientSecret) {
+    return c.json({ error: { message: "Client ID e Client Secret são obrigatórios", type: "validation" } }, 400);
+  }
+
+  const cfg = await mutateAdminConfig(c.env, (cfg) => {
+    cfg.antigravityConfig = {
+      clientId,
+      clientSecret,
+      updatedAt: new Date().toISOString(),
+    };
+  });
+
+  return c.json({
+    ok: true,
+    message: "Credenciais do Antigravity salvas no KV OMNI_KEYS com sucesso.",
+    configuredAt: cfg.antigravityConfig?.updatedAt,
+  });
 });
 
 export default adminRouter;

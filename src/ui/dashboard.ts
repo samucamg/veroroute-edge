@@ -44,10 +44,12 @@ export function renderDashboardHtml(): string {
       background: rgba(11, 15, 25, 0.85);
       backdrop-filter: blur(16px);
       border-bottom: 1px solid var(--card-border);
-      padding: 1rem 2rem;
+      padding: 0.75rem 1.5rem;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      flex-wrap: wrap;
+      gap: 0.75rem;
       position: sticky;
       top: 0;
       z-index: 100;
@@ -92,30 +94,98 @@ export function renderDashboardHtml(): string {
 
     nav {
       display: flex;
-      gap: 0.5rem;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      align-items: center;
     }
 
     .nav-btn {
       background: transparent;
-      border: none;
+      border: 1px solid transparent;
       color: var(--text-muted);
-      font-size: 0.9rem;
+      font-size: 0.85rem;
       font-weight: 500;
-      padding: 0.5rem 1rem;
+      padding: 0.45rem 0.85rem;
       border-radius: 8px;
       cursor: pointer;
       transition: all 0.2s;
+      white-space: nowrap;
     }
 
     .nav-btn:hover {
       color: var(--text);
       background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.1);
     }
 
     .nav-btn.active {
       color: var(--primary);
-      background: rgba(56, 189, 248, 0.1);
+      background: rgba(56, 189, 248, 0.12);
+      border-color: rgba(56, 189, 248, 0.3);
       font-weight: 600;
+    }
+
+    .nav-btn.nav-admin {
+      border-color: rgba(129, 140, 248, 0.4);
+      background: rgba(129, 140, 248, 0.12);
+      color: #c7d2fe;
+    }
+
+    .nav-btn.nav-admin:hover {
+      background: rgba(129, 140, 248, 0.22);
+      color: #fff;
+    }
+
+    /* Modal & Combo Styles */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.78);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 1.5rem;
+    }
+    .modal-overlay.active { display: flex; animation: fadeIn 0.2s ease; }
+    .modal-card {
+      background: #101626;
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 1.75rem;
+      max-width: 620px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+    }
+    .combo-target-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.5rem 0.75rem;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      margin-bottom: 0.4rem;
+      font-size: 0.85rem;
+    }
+    .badge-latency {
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 9999px;
+    }
+    .badge-latency.ok {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--emerald);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .badge-latency.err {
+      background: rgba(244, 63, 94, 0.15);
+      color: var(--rose);
+      border: 1px solid rgba(244, 63, 94, 0.3);
     }
 
     main {
@@ -330,7 +400,7 @@ export function renderDashboardHtml(): string {
       <button class="nav-btn" onclick="showTab('combos')">Combos & Quotas</button>
       <button class="nav-btn" onclick="showTab('playground')">Playground</button>
       <button class="nav-btn" onclick="showTab('docs')">Clientes</button>
-      <button class="nav-btn" onclick="showTab('admin')">Administração</button>
+      <button class="nav-btn nav-admin" onclick="showTab('admin')">⚙️ Administração</button>
     </nav>
   </header>
 
@@ -536,23 +606,62 @@ curl -X POST https://seu-worker.workers.dev/v1/search \\
     <div id="tab-antigravity" class="tab-pane">
       <div class="card">
         <div class="card-title">🔐 Conexão OAuth com Antigravity CLI / Google Cloud Code Assist</div>
-        <p style="color: var(--text-muted); font-size: 0.9rem; line-height: 1.6; margin-bottom: 1.5rem;">
+        <p style="color: var(--text-muted); font-size: 0.9rem; line-height: 1.6; margin-bottom: 1.25rem;">
           Conecte sua conta do Google para utilizar o Claude 3.7 Sonnet e Gemini 2.5 Pro através dos endpoints oficiais do Code Assist (usados nativamente pelo Antigravity CLI).
         </p>
 
-        <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 2rem;">
-          <a href="/api/oauth/antigravity/authorize" class="btn">
-            🔗 Conectar com Google (Antigravity OAuth)
-          </a>
+        <!-- Status Card -->
+        <div id="agy-status-card" style="padding: 1rem 1.25rem; border-radius: 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+          <div>
+            <div style="font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+              <span>Status da Conexão:</span>
+              <span id="agy-badge-configured" class="badge-edge" style="background: rgba(245,158,11,0.15); color: var(--amber); border-color: rgba(245,158,11,0.3);">Verificando...</span>
+            </div>
+            <div id="agy-detail-text" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.35rem;">
+              Verificando credenciais no KV OMNI_KEYS e variáveis de ambiente...
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.75rem;">
+            <a id="agy-auth-btn" href="/api/oauth/antigravity/authorize" class="btn" style="padding: 0.5rem 1rem; font-size: 0.85rem;">
+              🔗 Autorizar com Google
+            </a>
+            <button class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.85rem;" onclick="loadAntigravityStatus()">
+              🔄 Atualizar Status
+            </button>
+          </div>
         </div>
 
-        <div style="border-top: 1px solid var(--card-border); padding-top: 1.5rem;">
-          <h4 style="font-size: 1rem; margin-bottom: 0.75rem;">Importação Manual de Credenciais (Tokens Antigravity)</h4>
-          <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">
-            Se já estiver autenticado na máquina local, cole abaixo seu <code>refresh_token</code> ou o JSON de credenciais:
+        <!-- Credenciais OAuth Setup Form -->
+        <div style="background: rgba(56, 189, 248, 0.03); border: 1px solid rgba(56, 189, 248, 0.15); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.75rem;">
+          <h4 style="font-size: 0.95rem; margin-bottom: 0.5rem; color: var(--primary);">⚙️ Configuração das Credenciais do Google OAuth</h4>
+          <p style="color: var(--text-muted); font-size: 0.82rem; line-height: 1.5; margin-bottom: 1rem;">
+            🔒 <strong>Por que configurar aqui?</strong> Para evitar bloqueios do <strong>GitHub Secret Scanning</strong> ao commitar no repositório, suas credenciais de OAuth são salvas de forma segura no <strong>Cloudflare KV (<code>OMNI_KEYS</code>)</strong> ou via <code>wrangler secret put</code>.
           </p>
-          <textarea id="agy-token-input" rows="4" placeholder="Cole aqui seu refresh_token ou JSON de credenciais do Antigravity..."></textarea>
-          <button class="btn btn-secondary" style="margin-top: 0.75rem;" onclick="saveAgyToken()">Salvar Credenciais no Worker</button>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+            <div>
+              <label style="display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.35rem;">Google OAuth Client ID:</label>
+              <input type="text" id="agy-input-client-id" placeholder="ex: 123456789-abcdef.apps.googleusercontent.com" style="width: 100%; font-size: 0.85rem;" />
+            </div>
+            <div>
+              <label style="display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.35rem;">Google OAuth Client Secret:</label>
+              <input type="password" id="agy-input-client-secret" placeholder="ex: GOCSPX-xxxxxxxxxxxx" style="width: 100%; font-size: 0.85rem;" />
+            </div>
+          </div>
+          <button class="btn" style="padding: 0.5rem 1.25rem; font-size: 0.85rem;" onclick="saveAntigravityConfig()">
+            💾 Salvar Credenciais no KV OMNI_KEYS
+          </button>
+        </div>
+
+        <!-- Importação Manual de Tokens -->
+        <div style="border-top: 1px solid var(--card-border); padding-top: 1.5rem;">
+          <h4 style="font-size: 0.95rem; margin-bottom: 0.5rem;">📥 Importação Manual de Tokens (Sem Navegador)</h4>
+          <p style="color: var(--text-muted); font-size: 0.82rem; margin-bottom: 0.75rem;">
+            Se você já utiliza o Antigravity CLI localmente, pode colar diretamente o conteúdo de <code>~/.config/antigravity/tokens.json</code> ou seu <code>refresh_token</code>:
+          </p>
+          <textarea id="agy-token-input" rows="3" placeholder='{"access_token": "...", "refresh_token": "...", "project_id": "..."}' style="font-size: 0.85rem; font-family: monospace;"></textarea>
+          <button class="btn btn-secondary" style="margin-top: 0.75rem; padding: 0.5rem 1.25rem; font-size: 0.85rem;" onclick="saveAgyToken()">
+            Salvar Tokens no Worker
+          </button>
         </div>
       </div>
     </div>
@@ -560,45 +669,34 @@ curl -X POST https://seu-worker.workers.dev/v1/search \\
     <!-- TAB 5: COMBOS & QUOTA SHARING -->
     <div id="tab-combos" class="tab-pane">
       <div class="card">
-        <div class="card-title">⚖️ Compartilhamento de Cota (Work-Conserving Fair-Share)</div>
-        <p style="color: var(--text-muted); font-size: 0.9rem; line-height: 1.6; margin-bottom: 1rem;">
-          O algoritmo de <strong>Compartilhamento de Cota</strong> divide inteligentemente a cota de contas gratuitas (como Gemini 60M tokens ou Cerebras 1M tokens/dia) entre diferentes usuários ou chaves de clientes:
-        </p>
-        <ul style="color: var(--text-muted); font-size: 0.85rem; line-height: 1.6; margin-left: 1.5rem; margin-bottom: 1.5rem;">
-          <li><strong>Modo Generoso (Headroom):</strong> Enquanto a saturação do pool for menor que 70%, qualquer usuário ativo pode "emprestar" da cota ociosa dos outros usuários.</li>
-          <li><strong>Modo Restrito (Saturação >= 70%):</strong> Quando a demanda global sobe, o sistema passa a forçar fatias estritas de acordo com o peso de cada chave, garantindo equidade sem desperdício de cota.</li>
-        </ul>
-
-        <div class="provider-grid">
-          <div class="provider-box">
-            <div class="provider-header">
-              <span class="provider-name">omni-free (Cascata Gratuita Total)</span>
-              <span class="badge-edge">Prioridade</span>
-            </div>
-            <span style="font-size: 0.8rem; color: var(--text-muted);">
-              1º Gemini Flash ➔ 2º Groq Llama 3.3 ➔ 3º Cerebras ➔ 4º Alibaba Qwen ➔ 5º Cloudflare AI ➔ 6º OpenRouter ➔ 7º Pollinations
-            </span>
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
+          <div>
+            <div class="card-title" style="margin-bottom: 0.25rem;">⚡ Combos Inteligentes & Cascata de Failover</div>
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0;">
+              No VeroRoute Edge, <strong>o nome do combo é o modelo</strong>. Requisições para <code>{"model": "nome-do-combo"}</code> realizam failover automático entre os alvos.
+            </p>
           </div>
-
-          <div class="provider-box">
-            <div class="provider-header">
-              <span class="provider-name">omni-code (Especialista em Programação)</span>
-              <span class="badge-edge">Prioridade</span>
-            </div>
-            <span style="font-size: 0.8rem; color: var(--text-muted);">
-              1º Antigravity Gemini 2.5 Pro ➔ 2º 1min.ai GPT-4o ➔ 3º Qwen 2.5 Coder ➔ 4º Groq ➔ 5º Cerebras
-            </span>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button class="btn" style="padding: 0.5rem 1rem; font-size: 0.85rem;" onclick="openNewComboModal()">
+              + Novo Combo
+            </button>
+            <button class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.85rem;" onclick="testAllCombos()">
+              ▶️ Testar Modelos
+            </button>
+            <button class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.85rem;" onclick="loadCombos()">
+              🔄 Atualizar
+            </button>
           </div>
+        </div>
 
-          <div class="provider-box">
-            <div class="provider-header">
-              <span class="provider-name">omni-fast (Ultra-Velocidade)</span>
-              <span class="badge-edge">P2C Load-Balance</span>
-            </div>
-            <span style="font-size: 0.8rem; color: var(--text-muted);">
-              Distribuição inteligente entre Cerebras (2.000 t/s) e Groq (500 t/s)
-            </span>
-          </div>
+        <!-- Quota Share Info Banner -->
+        <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--card-border); border-radius: 12px; padding: 0.9rem 1.2rem; margin-bottom: 1.5rem; font-size: 0.82rem; color: var(--text-muted); line-height: 1.5;">
+          ⚖️ <strong>Work-Conserving Fair-Share:</strong> Combos distribuem a carga entre modelos e provedores. Se um provedor atinge limite de rate (HTTP 429) ou cota diária, o gateway salta para o próximo alvo da lista sem interrupção para o cliente.
+        </div>
+
+        <!-- Combos Grid -->
+        <div id="combos-container" style="display: grid; grid-template-columns: 1fr; gap: 1.25rem;">
+          <div style="text-align: center; padding: 2rem; color: var(--text-muted);">Carregando combos...</div>
         </div>
       </div>
     </div>
@@ -687,6 +785,26 @@ response = client.chat.completions.create(
 )
 print(response.choices[0].message.content)
         </div>
+
+        <h4 style="margin: 1.5rem 0 0.5rem 0; color: #38bdf8;">4. DeepSeek Harness (DSH) — Orquestrador de Agentes DeepSeek AI</h4>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.5rem;">
+          O <strong>DeepSeek Harness (<code>dsh</code>)</strong> é o framework oficial e modular de orquestração de agentes autônomos da DeepSeek AI. Aponte o DSH diretamente para o seu VeroRoute Edge e utilize failover e combos como modelos de execução:
+        </p>
+        <div class="code-box">
+# 1. Defina as variáveis de ambiente apontando para o VeroRoute Edge
+export OPENAI_BASE_URL="https://seu-worker.workers.dev/v1"
+export OPENAI_API_KEY="sk-vr-seu-token" # Sua chave virtual sk-vr-... ou AUTH_TOKEN
+export DEEPSEEK_API_BASE="https://seu-worker.workers.dev/v1"
+
+# 2. Inicie o DeepSeek Harness no modo Web ou CLI passando qualquer Combo como modelo:
+npx @deepseek-ai/dsh web --model omni-code
+
+# Ou invoque via CLI com seu combo customizado:
+dsh --model combo-super-payload
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.5rem;">
+          💡 <strong>Dica de Combos:</strong> O nome de qualquer combo criado no VeroRoute Edge atua como o nome do modelo (<code>model: "combo-..."</code>).
+        </p>
       </div>
     </div>
 
@@ -821,12 +939,91 @@ print(response.choices[0].message.content)
     </div>
   </main>
 
+  <!-- MODAL: NOVO / EDITAR COMBO -->
+  <div id="modal-combo" class="modal-overlay">
+    <div class="modal-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <h3 id="modal-combo-title" style="margin: 0; font-size: 1.2rem; color: #fff;">Novo Combo Inteligente</h3>
+        <button type="button" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.85rem;" onclick="closeComboModal()">✕</button>
+      </div>
+
+      <div style="margin-bottom: 1rem;">
+        <label style="display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.35rem;">
+          Nome do Combo / Identificador do Modelo: <span style="color: var(--rose);">*</span>
+        </label>
+        <input type="text" id="combo-form-id" placeholder="ex: combo-super-payload ou meu-combo-chat" style="width: 100%; font-family: monospace; font-size: 0.85rem;" />
+        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+          💡 Este identificador será o modelo requisitado na API: <code>{"model": "nome-do-combo"}</code>.
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+        <div>
+          <label style="display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.35rem;">Nome de Exibição:</label>
+          <input type="text" id="combo-form-name" placeholder="ex: Super Payload" style="width: 100%; font-size: 0.85rem;" />
+        </div>
+        <div>
+          <label style="display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.35rem;">Estratégia de Roteamento:</label>
+          <select id="combo-form-strategy" style="width: 100%; font-size: 0.85rem;">
+            <option value="priority">Prioridade / Cascata Failover</option>
+            <option value="round-robin">Round-Robin (Alternância)</option>
+            <option value="p2c">P2C (Menor Latência)</option>
+            <option value="lowest-cost">Menor Custo ($0 First)</option>
+            <option value="random">Aleatório</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 1rem;">
+        <label style="display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.35rem;">Descrição:</label>
+        <input type="text" id="combo-form-desc" placeholder="ex: Consumido para geração de atividades gamificadas" style="width: 100%; font-size: 0.85rem;" />
+      </div>
+
+      <div style="border-top: 1px solid var(--card-border); padding-top: 1rem; margin-bottom: 1rem;">
+        <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #fff;">Modelos Alvo na Cascata:</div>
+        <div id="modal-targets-list" style="max-height: 180px; overflow-y: auto; margin-bottom: 0.75rem;">
+          <!-- Alvos listados aqui -->
+        </div>
+
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+          <select id="modal-add-provider" style="font-size: 0.8rem; width: 140px;">
+            <option value="gemini">gemini</option>
+            <option value="groq">groq</option>
+            <option value="cerebras">cerebras</option>
+            <option value="alibaba">alibaba</option>
+            <option value="antigravity">antigravity</option>
+            <option value="1min">1min</option>
+            <option value="cloudflare-ai">cloudflare-ai</option>
+            <option value="openrouter">openrouter</option>
+            <option value="pollinations">pollinations</option>
+            <option value="openai">openai</option>
+            <option value="azure">azure</option>
+            <option value="bedrock">bedrock</option>
+          </select>
+          <input type="text" id="modal-add-model" placeholder="Nome do modelo (ex: gemini-2.5-flash)" style="flex: 1; min-width: 180px; font-size: 0.8rem;" />
+          <button type="button" class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" onclick="addModalTarget()">+ Adicionar Alvo</button>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.75rem; border-top: 1px solid var(--card-border); padding-top: 1rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeComboModal()">Cancelar</button>
+        <button type="button" class="btn" onclick="saveComboForm()">💾 Salvar Combo</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     function showTab(tabId) {
       document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
       document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
-      document.getElementById('tab-' + tabId).classList.add('active');
-      event.target.classList.add('active');
+      const pane = document.getElementById('tab-' + tabId);
+      if (pane) pane.classList.add('active');
+      const btn = document.querySelector('.nav-btn[onclick*="' + tabId + '"]');
+      if (btn) btn.classList.add('active');
+
+      if (tabId === 'combos') loadCombos();
+      else if (tabId === 'antigravity') loadAntigravityStatus();
+      else if (tabId === 'admin') loadAdmin();
     }
 
     document.getElementById('endpoint-url').innerText = window.location.origin + '/v1';
@@ -1277,6 +1474,337 @@ print(response.choices[0].message.content)
       return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
+    // ============ ANTIGRAVITY OAUTH & KV CONFIG ============
+    async function loadAntigravityStatus() {
+      const badge = document.getElementById('agy-badge-configured');
+      const detail = document.getElementById('agy-detail-text');
+      const authBtn = document.getElementById('agy-auth-btn');
+      if (!badge) return;
+      try {
+        const res = await fetch('/api/admin/antigravity/status');
+        const data = await res.json();
+        if (data.isConfigured) {
+          badge.innerText = 'Pronto para Uso';
+          badge.style.background = 'rgba(16,185,129,0.15)';
+          badge.style.color = 'var(--emerald)';
+          badge.style.borderColor = 'rgba(16,185,129,0.3)';
+          detail.innerHTML = 'Client ID configurado (' + escapeHtml(data.maskedClientId) + ')' +
+            (data.hasTokens ? ' · <strong style="color:var(--emerald);">Tokens Ativos no KV</strong>' : ' · <span style="color:var(--amber);">Aguardando Autorização</span>');
+          if (authBtn) authBtn.style.opacity = '1';
+        } else {
+          badge.innerText = 'Credenciais Pendentes';
+          badge.style.background = 'rgba(245,158,11,0.15)';
+          badge.style.color = 'var(--amber)';
+          badge.style.borderColor = 'rgba(245,158,11,0.3)';
+          detail.innerHTML = 'Insira o Client ID e Client Secret abaixo para salvar com segurança no KV OMNI_KEYS.';
+        }
+      } catch (e) {
+        if (badge) badge.innerText = 'Erro ao verificar';
+      }
+    }
+
+    async function saveAntigravityConfig() {
+      const clientId = document.getElementById('agy-input-client-id').value.trim();
+      const clientSecret = document.getElementById('agy-input-client-secret').value.trim();
+      if (!clientId || !clientSecret) return alert('Por favor, informe tanto o Client ID quanto o Client Secret.');
+
+      try {
+        const res = await fetch('/api/admin/antigravity/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clientId: clientId, clientSecret: clientSecret })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          alert('Credenciais salvas com sucesso no KV OMNI_KEYS!');
+          document.getElementById('agy-input-client-secret').value = '';
+          loadAntigravityStatus();
+        } else {
+          alert('Erro ao salvar: ' + (data.error ? data.error.message : 'Desconhecido'));
+        }
+      } catch (e) {
+        alert('Erro: ' + e.message);
+      }
+    }
+
+    // ============ COMBOS & QUOTAS ============
+    let currentCombos = {};
+    let modalTargets = [];
+
+    async function loadCombos() {
+      const container = document.getElementById('combos-container');
+      if (!container) return;
+      try {
+        const res = await fetch('/api/admin/combos');
+        const data = await res.json();
+        currentCombos = {};
+        (data.combos || []).forEach(function(c) { currentCombos[c.id] = c; });
+        renderCombos(data.combos || []);
+      } catch (e) {
+        container.innerHTML = '<div style="color:var(--rose);">Erro ao carregar combos: ' + escapeHtml(e.message) + '</div>';
+      }
+    }
+
+    function renderCombos(combos) {
+      const container = document.getElementById('combos-container');
+      if (!container) return;
+      if (!combos || combos.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">Nenhum combo cadastrado. Clique em "+ Novo Combo" para criar.</div>';
+        return;
+      }
+
+      const strategyLabels = {
+        'priority': 'PRIORIDADE / FAILOVER',
+        'round-robin': 'ROUND-ROBIN',
+        'p2c': 'P2C LOAD-BALANCE',
+        'lowest-cost': 'MENOR CUSTO ($0 FIRST)',
+        'random': 'ALEATÓRIO'
+      };
+
+      let html = '';
+      combos.forEach(function(c) {
+        const stratLabel = strategyLabels[c.strategy] || (c.strategy || 'PRIORIDADE').toUpperCase();
+        html += '<div class="card" style="margin-bottom:0.75rem; background:rgba(18,24,38,0.85); border:1px solid var(--card-border);">' +
+          '<div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.75rem;">' +
+            '<div>' +
+              '<div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">' +
+                '<span style="font-size:1.1rem; font-weight:700; color:#fff;">' + escapeHtml(c.name || c.id) + '</span>' +
+                '<span class="badge-edge" style="font-family:monospace; background:rgba(56,189,248,0.15); color:var(--primary); cursor:pointer;" title="Clique para copiar" onclick="navigator.clipboard.writeText(\'' + escapeHtml(c.id) + '\'); alert(\'Modelo copiado: ' + escapeHtml(c.id) + '\');">' +
+                  'model: ' + escapeHtml(c.id) + ' 📋' +
+                '</span>' +
+                '<span class="badge-edge" style="background:rgba(129,140,248,0.15); color:var(--accent); border-color:rgba(129,140,248,0.3);">' +
+                  escapeHtml(stratLabel) +
+                '</span>' +
+              '</div>' +
+              (c.description ? '<p style="color:var(--text-muted); font-size:0.82rem; margin-top:0.35rem; line-height:1.4;">' + escapeHtml(c.description) + '</p>' : '') +
+            '</div>' +
+            '<div style="display:flex; gap:0.4rem; flex-wrap:wrap;">' +
+              '<button class="btn btn-secondary" style="padding:0.35rem 0.75rem; font-size:0.78rem;" onclick="testCombo(\'' + escapeHtml(c.id) + '\')">▶️ Testar Modelos</button>' +
+              '<button class="btn btn-secondary" style="padding:0.35rem 0.75rem; font-size:0.78rem;" onclick="openQuickAddModelModal(\'' + escapeHtml(c.id) + '\')">+ Modelo</button>' +
+              '<button class="btn btn-secondary" style="padding:0.35rem 0.75rem; font-size:0.78rem;" onclick="openEditComboModal(\'' + escapeHtml(c.id) + '\')">✏️ Editar</button>' +
+              '<button class="btn btn-secondary" style="padding:0.35rem 0.75rem; font-size:0.78rem; background:rgba(244,63,94,0.15); color:var(--rose);" onclick="deleteCombo(\'' + escapeHtml(c.id) + '\')">🗑️</button>' +
+            '</div>' +
+          '</div>' +
+
+          '<div style="margin-top:0.75rem;">' +
+            '<div style="font-size:0.78rem; font-weight:600; color:var(--text-muted); margin-bottom:0.4rem;">MODELOS ALVO NA CASCATA (' + (c.targets ? c.targets.length : 0) + '):</div>' +
+            '<div style="display:flex; flex-wrap:wrap; gap:0.5rem;" id="combo-targets-' + escapeHtml(c.id) + '">';
+
+        if (c.targets && c.targets.length > 0) {
+          c.targets.forEach(function(t, idx) {
+            html += '<div style="display:inline-flex; align-items:center; gap:0.4rem; background:rgba(255,255,255,0.04); border:1px solid var(--card-border); border-radius:8px; padding:0.3rem 0.6rem; font-size:0.8rem;">' +
+              '<span style="color:var(--text-muted); font-size:0.7rem;">#' + (idx + 1) + '</span>' +
+              '<strong style="color:var(--primary); font-size:0.75rem;">' + escapeHtml(t.provider) + '</strong>' +
+              '<span style="font-family:monospace;">' + escapeHtml(t.model) + '</span>' +
+              '<span id="test-badge-' + escapeHtml(c.id) + '-' + idx + '" style="margin-left:0.2rem;"></span>' +
+              '<span style="color:var(--text-muted); cursor:pointer; font-size:0.9rem; padding:0 2px;" title="Remover alvo" onclick="removeModelFromCombo(\'' + escapeHtml(c.id) + '\', \'' + escapeHtml(t.provider) + '\', \'' + escapeHtml(t.model) + '\')">✕</span>' +
+            '</div>';
+          });
+        } else {
+          html += '<span style="color:var(--text-muted); font-size:0.8rem;">Nenhum modelo alvo vinculado. Clique em "+ Modelo".</span>';
+        }
+
+        html += '</div></div></div>';
+      });
+
+      container.innerHTML = html;
+    }
+
+    function openNewComboModal() {
+      document.getElementById('modal-combo-title').innerText = 'Novo Combo Inteligente';
+      document.getElementById('combo-form-id').value = '';
+      document.getElementById('combo-form-id').disabled = false;
+      document.getElementById('combo-form-name').value = '';
+      document.getElementById('combo-form-desc').value = '';
+      document.getElementById('combo-form-strategy').value = 'priority';
+      modalTargets = [];
+      renderModalTargets();
+      document.getElementById('modal-combo').classList.add('active');
+    }
+
+    function openEditComboModal(id) {
+      const c = currentCombos[id];
+      if (!c) return;
+      document.getElementById('modal-combo-title').innerText = 'Editar Combo: ' + c.id;
+      document.getElementById('combo-form-id').value = c.id;
+      document.getElementById('combo-form-id').disabled = true;
+      document.getElementById('combo-form-name').value = c.name || c.id;
+      document.getElementById('combo-form-desc').value = c.description || '';
+      document.getElementById('combo-form-strategy').value = c.strategy || 'priority';
+      modalTargets = (c.targets || []).map(function(t) { return { provider: t.provider, model: t.model }; });
+      renderModalTargets();
+      document.getElementById('modal-combo').classList.add('active');
+    }
+
+    function closeComboModal() {
+      document.getElementById('modal-combo').classList.remove('active');
+    }
+
+    function renderModalTargets() {
+      const container = document.getElementById('modal-targets-list');
+      if (!container) return;
+      if (modalTargets.length === 0) {
+        container.innerHTML = '<span style="color:var(--text-muted); font-size:0.8rem;">Nenhum modelo adicionado ainda. Selecione e adicione abaixo.</span>';
+        return;
+      }
+      let html = '';
+      modalTargets.forEach(function(t, i) {
+        html += '<div class="combo-target-item">' +
+          '<span><strong style="color:var(--primary);">' + escapeHtml(t.provider) + '</strong> / <span style="font-family:monospace;">' + escapeHtml(t.model) + '</span></span>' +
+          '<button type="button" class="btn btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.75rem; color:var(--rose);" onclick="removeModalTarget(' + i + ')">Remover</button>' +
+        '</div>';
+      });
+      container.innerHTML = html;
+    }
+
+    function addModalTarget() {
+      const prov = document.getElementById('modal-add-provider').value.trim();
+      const mod = document.getElementById('modal-add-model').value.trim();
+      if (!prov || !mod) return alert('Selecione o provedor e informe o modelo');
+      modalTargets.push({ provider: prov, model: mod });
+      document.getElementById('modal-add-model').value = '';
+      renderModalTargets();
+    }
+
+    function removeModalTarget(idx) {
+      modalTargets.splice(idx, 1);
+      renderModalTargets();
+    }
+
+    async function saveComboForm() {
+      const id = document.getElementById('combo-form-id').value.trim();
+      const name = document.getElementById('combo-form-name').value.trim();
+      const description = document.getElementById('combo-form-desc').value.trim();
+      const strategy = document.getElementById('combo-form-strategy').value;
+
+      if (!id) return alert('O identificador/nome do combo é obrigatório.');
+
+      try {
+        const res = await fetch('/api/admin/combos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: id,
+            name: name || id,
+            description: description,
+            strategy: strategy,
+            targets: modalTargets,
+            enabled: true
+          })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          closeComboModal();
+          loadCombos();
+        } else {
+          alert('Erro ao salvar combo: ' + JSON.stringify(data));
+        }
+      } catch (e) {
+        alert('Erro: ' + e.message);
+      }
+    }
+
+    async function deleteCombo(id) {
+      if (!confirm('Deseja excluir o combo "' + id + '"? Clientes com esse modelo deixarão de funcionar.')) return;
+      try {
+        const res = await fetch('/api/admin/combos/' + id, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.ok) loadCombos();
+        else alert('Erro ao excluir: ' + JSON.stringify(data));
+      } catch (e) {
+        alert('Erro: ' + e.message);
+      }
+    }
+
+    function openQuickAddModelModal(comboId) {
+      const prov = prompt('Informe o provedor (ex: gemini, groq, cerebras, alibaba, antigravity, 1min, cloudflare-ai):');
+      if (!prov) return;
+      const mod = prompt('Informe o nome do modelo (ex: gemini-2.5-flash, llama-3.3-70b-versatile, qwen2.5-coder-32b-instruct):');
+      if (!mod) return;
+
+      fetch('/api/admin/combos/' + comboId + '/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: prov.trim(), model: mod.trim() })
+      }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.ok) loadCombos();
+        else alert('Erro: ' + JSON.stringify(data));
+      }).catch(function(e) { alert('Erro: ' + e.message); });
+    }
+
+    async function removeModelFromCombo(comboId, provider, model) {
+      if (!confirm('Remover ' + provider + '/' + model + ' deste combo?')) return;
+      try {
+        const res = await fetch('/api/admin/combos/' + comboId + '/models', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider: provider, model: model })
+        });
+        const data = await res.json();
+        if (data.ok) loadCombos();
+        else alert('Erro: ' + JSON.stringify(data));
+      } catch (e) {
+        alert('Erro: ' + e.message);
+      }
+    }
+
+    async function testCombo(comboId) {
+      const c = currentCombos[comboId];
+      if (!c || !c.targets || c.targets.length === 0) return alert('Este combo não possui modelos para testar.');
+
+      c.targets.forEach(function(_, idx) {
+        const badge = document.getElementById('test-badge-' + comboId + '-' + idx);
+        if (badge) {
+          badge.className = 'badge-latency';
+          badge.style.background = 'rgba(56,189,248,0.15)';
+          badge.style.color = 'var(--primary)';
+          badge.innerText = 'Testando...';
+        }
+      });
+
+      try {
+        const res = await fetch('/api/admin/combos/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ comboId: comboId })
+        });
+        const data = await res.json();
+        if (data.ok && data.results) {
+          data.results.forEach(function(r, idx) {
+            const badge = document.getElementById('test-badge-' + comboId + '-' + idx);
+            if (badge) {
+              if (r.success) {
+                badge.className = 'badge-latency ok';
+                badge.innerText = '⚡ ' + r.latency_ms + 'ms · OK';
+              } else {
+                badge.className = 'badge-latency err';
+                badge.innerText = '❌ ' + (r.status || 'Erro') + (r.latency_ms ? ' (' + r.latency_ms + 'ms)' : '');
+                badge.title = r.error || 'Falha no teste';
+              }
+            }
+          });
+        }
+      } catch (e) {
+        alert('Erro ao executar testes: ' + e.message);
+      }
+    }
+
+    async function testAllCombos() {
+      const comboIds = Object.keys(currentCombos);
+      if (comboIds.length === 0) return alert('Nenhum combo para testar.');
+      for (let i = 0; i < comboIds.length; i++) {
+        await testCombo(comboIds[i]);
+      }
+    }
+
+    // Inicialização
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialTab = urlParams.get('tab') || window.location.hash.replace('#tab-', '') || 'overview';
+    if (initialTab && initialTab !== 'overview') {
+      showTab(initialTab);
+    } else {
+      loadCombos();
+    }
     loadAdmin();
   </script>
 </body>
