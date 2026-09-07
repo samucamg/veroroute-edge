@@ -48,11 +48,25 @@
 
 ---
 
-## ⚡ 1-Click Deploy
+## ⚡ 1-Click Deploy — one-token setup
 
 Deploy directly to your Cloudflare Workers account with one click:
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/samucamg/veroroute-edge)
+
+The first-run form intentionally asks for **one secret only**: `AUTH_TOKEN`.
+Do not enter dummy values such as `12345` for OpenAI, Gemini, Groq or other
+providers: provider credentials are configured after deployment in the built-in
+**Administration** panel.
+
+During the Cloudflare resource step, create or select `OMNI_CACHE` and
+`OMNI_KEYS`. They are Cloudflare KV storage bindings, not API credentials. After
+deployment, open the Worker URL, enter Administration using `AUTH_TOKEN`, and
+add only the providers you use. Workers AI and keyless providers work without
+an external provider key.
+
+Environment variables such as `OPENAI_API_KEYS` remain supported only as an
+optional advanced/legacy alternative.
 
 ### Manual CLI Deployment
 
@@ -91,10 +105,10 @@ npx wrangler deploy
 | `CACHE_TTL_SECONDS` | Edge response cache TTL in seconds | `3600` | No |
 | `QUOTA_MAX_REQUESTS` | Global sliding-window request limit | `1000` | No |
 | `QUOTA_WINDOW_SECONDS` | Sliding-window duration in seconds | `60` | No |
-| `OPENAI_API_KEYS` | Comma-separated OpenAI API keys | — | Optional |
-| `GEMINI_API_KEYS` | Comma-separated Google Gemini API keys | — | Optional |
-| `GROQ_API_KEYS` | Comma-separated Groq API keys | — | Optional |
-| `DEEPSEEK_API_KEYS` | Comma-separated DeepSeek API keys | — | Optional |
+| `OPENAI_API_KEYS` | Optional legacy/CLI alternative; prefer Administration panel | — | No |
+| `GEMINI_API_KEYS` | Optional legacy/CLI alternative; prefer Administration panel | — | No |
+| `GROQ_API_KEYS` | Optional legacy/CLI alternative; prefer Administration panel | — | No |
+| `DEEPSEEK_API_KEYS` | Optional legacy/CLI alternative; prefer Administration panel | — | No |
 
 ---
 

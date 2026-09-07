@@ -26,7 +26,7 @@
     }
   ],
 
-  // Default environment variables (override in .dev.vars for local dev, or via wrangler secret put)
+  // Non-secret runtime defaults. AUTH_TOKEN is the only first-run secret; provider credentials are added through Administration.
   "vars": {
     "DEFAULT_ROUTING_STRATEGY": "priority",
     "DEFAULT_OUTPUT_STYLE": "none",
@@ -41,8 +41,7 @@
     "CASCADE_TIMEOUT_MS": "45000",
     "CACHE_TTL_SECONDS": "3600",
     "QUOTA_MAX_REQUESTS": "1000",
-    "QUOTA_WINDOW_SECONDS": "60",
-    "RETRY_DELAY_MS": "1000"
+    "QUOTA_WINDOW_SECONDS": "60"
   },
 
   "observability": {
