@@ -195,7 +195,7 @@ app.post("/v1/chat/completions", async (c) => {
       body = applyContextCompression(body, body.output_style || c.env.DEFAULT_OUTPUT_STYLE);
     }
     const _keyId = (c.get("principal") as { id: string } | null)?.id;
-    return await dispatchWithCascade(body, c.env, c.executionCtx as any);
+    return await dispatchWithCascade(body, c.env, c.executionCtx as any, c.get('principal') as any);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return new Response(
@@ -214,7 +214,7 @@ app.post("/v1/messages", async (c) => {
     const openAIBody = formatAnthropicToOpenAI(body);
     const stream = body.stream ?? false;
     const _princId = (c.get("principal") as { id: string } | null)?.id;
-    const response = await dispatchWithCascade(openAIBody, c.env, c.executionCtx as any);
+    const response = await dispatchWithCascade(openAIBody, c.env, c.executionCtx as any, c.get('principal') as any);
     if (stream) {
       const transformer = createOpenAIToAnthropicTransformStream(body.model);
       const outStream = response.body ? response.body.pipeThrough(transformer) : null;
@@ -243,7 +243,7 @@ app.post("/v1/responses", async (c) => {
     stream: body.stream as boolean | undefined,
   };
   const _rspKeyId = (c.get("principal") as { id: string } | null)?.id;
-  return dispatchWithCascade(chatReq, c.env, c.executionCtx as any);
+  return dispatchWithCascade(chatReq, c.env, c.executionCtx as any, c.get('principal') as any);
 });
 
 // ---------------------------------------------------------------------------

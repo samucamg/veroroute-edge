@@ -16,6 +16,8 @@ import { executeOpenAICompatible } from "@/adapters/openai-compatible";
 import { selectActiveKey } from "@/routing/keyPool";
 import { getAntigravityOAuthCredentials } from "./store";
 import type { EnvBindings } from "@/types/provider";
+import { getUsageSummary } from "@/routing/costTracker";
+import { getCircuitStatus } from "@/routing/circuitBreaker";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const adminRouter = new Hono<{ Bindings: EnvBindings; Variables: any }>();
@@ -521,3 +523,17 @@ adminRouter.post("/antigravity/config", async (c) => {
 });
 
 export default adminRouter;
+
+// Phase C: usage stats
+adminRouter.get("/usage/:keyId", async (c) => {
+  const keyId = c.req.param("keyId");
+  const usage = await getUsageSummary(c.env, keyId);
+  return c.json({ keyId, ...usage });
+});
+
+// Phase C: circuit breaker status
+adminRouter.get("/circuits", async (c) => {
+  const providers = ["openai", "gemini", "groq", "cerebras", "cloudflare-ai", "1min", "openrouter", "deepseek", "mistral", "sambanova", "pollinations"];
+  const results = await Promise.all(providers.map(async (p) => ({ provider: p, ...(await getCircuitStatus(c.env, p)) })));
+  return c.json({ circuits: results });
+});

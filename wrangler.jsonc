@@ -37,6 +37,11 @@
     "ENABLE_MCP_SERVER": "false",
     "ENABLE_QUOTA_SHARING": "false",
     "MAX_RETRIES": "3",
+    "RETRY_DELAY_MS": "1000",
+    "CASCADE_TIMEOUT_MS": "45000",
+    "CACHE_TTL_SECONDS": "3600",
+    "QUOTA_MAX_REQUESTS": "1000",
+    "QUOTA_WINDOW_SECONDS": "60",
     "RETRY_DELAY_MS": "1000"
   },
 
