@@ -23,9 +23,16 @@
 <a id="english"></a>
 # 🇺🇸 English
 
-## ✨ Overview
+## ✨ Overview & Acknowledgments
 
-**VeroRoute Edge** is an edge-native AI gateway and smart router running on **Cloudflare Workers (V8 Isolates)**. Inspired by the routing resilience of **OmniRoute** and the token-economy architecture of **VeroRoute**, it delivers ultra-low-latency AI proxying with zero dedicated server overhead.
+**VeroRoute Edge** is an edge-native AI gateway and smart router designed specifically for **Cloudflare Workers (V8 Isolates)**.
+
+> 💡 **Inspiration & Lineage**  
+> This project is directly inspired by the outstanding [**OmniRoute**](https://github.com/diegosouzapw/OmniRoute) project by [@diegosouzapw](https://github.com/diegosouzapw).
+> 
+> **Which one should you choose?**
+> - **Choose [OmniRoute](https://github.com/diegosouzapw/OmniRoute)** if you have access to a VPS / server, want full multi-tenant capabilities, complex database storage, or need all heavy features of a complete self-hosted gateway.
+> - **Choose VeroRoute Edge** if you don't have a VPS, want **zero server maintenance**, ultra-fast global edge routing with **Cloudflare Workers**, or need a lightweight, high-performance gateway without dedicated server costs.
 
 ### 🚀 Key Capabilities
 
@@ -111,9 +118,16 @@ npx wrangler deploy
 <a id="portugues"></a>
 # 🇧🇷 Português
 
-## ✨ Visão Geral
+## ✨ Visão Geral & Agradecimentos
 
-O **VeroRoute Edge** é um gateway de IA serverless e roteador inteligente nativo para o **Cloudflare Workers (V8 Isolates)**. Inspirado na resiliência de roteamento do **OmniRoute** e na arquitetura de economia de tokens do **VeroRoute**, ele entrega roteamento de alta performance com custo zero de infraestrutura dedicada.
+O **VeroRoute Edge** é um gateway de IA serverless e roteador inteligente projetado especificamente para o **Cloudflare Workers (V8 Isolates)**.
+
+> 💡 **Inspiração e Origem**  
+> Este projeto foi diretamente inspirado no excelente projeto [**OmniRoute**](https://github.com/diegosouzapw/OmniRoute) criado por [@diegosouzapw](https://github.com/diegosouzapw).
+> 
+> **Qual projeto você deve escolher?**
+> - **Escolha o [OmniRoute](https://github.com/diegosouzapw/OmniRoute)** se você possui acesso a uma VPS ou servidor dedicado, precisa de suporte multi-tenant complexo, banco de dados relacional completo ou quer todas as funcionalidades avançadas de um gateway auto-hospedado robusto.
+> - **Escolha o VeroRoute Edge** se você não possui uma VPS, deseja **zero manutenção de servidor**, roteamento global de altíssima velocidade na infraestrutura serverless do **Cloudflare Workers**, ou precisa de uma solução leve e sem custos fixos de hospedagem.
 
 ### 🚀 Principais Funcionalidades
 
@@ -137,7 +151,7 @@ Implante diretamente na sua conta do Cloudflare Workers com apenas um clique:
 
 ### Implantação Manual via CLI
 
-`officia
+```bash
 # 1. Clonar repositório
 git clone https://github.com/samucamg/veroroute-edge.git
 cd veroroute-edge
