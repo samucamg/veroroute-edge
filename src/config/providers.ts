@@ -157,7 +157,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     costPerMillionInput: 0,
     costPerMillionOutput: 0,
     supportsStreaming: true,
-    supportsTools: true,
+    supportsTools: false,
     supportsVision: true,
   },
   freeapikey: {
@@ -170,7 +170,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     costPerMillionInput: 0,
     costPerMillionOutput: 0,
     supportsStreaming: true,
-    supportsTools: true,
+    supportsTools: false,
     supportsVision: false,
   },
   pollinations: {
@@ -183,7 +183,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     costPerMillionInput: 0,
     costPerMillionOutput: 0,
     supportsStreaming: true,
-    supportsTools: true,
+    supportsTools: false,
     supportsVision: false,
   },
   openrouter: {

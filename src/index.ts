@@ -31,6 +31,29 @@ import type { SearchRequest } from "./types/search";
 type Variables = { principal: import("./admin/auth").AuthPrincipal };
 const app = new Hono<{ Bindings: EnvBindings; Variables: Variables }>();
 
+// B4: Restrict admin CORS to same-origin (dashboard only)
+app.use("/api/admin/*", async (c, next) => {
+  const origin = c.req.header("Origin") || "";
+  const host = c.req.header("Host") || "";
+  // Allow if same origin or no origin (non-browser / curl)
+  const allowed = !origin || origin.includes(host) || origin === "null";
+  if (c.req.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": allowed ? origin || "*" : "",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        "Access-Control-Max-Age": "86400",
+      },
+    });
+  }
+  await next();
+  if (allowed && origin) {
+    c.header("Access-Control-Allow-Origin", origin);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // CORS — required for browser clients and IDEs
 // ---------------------------------------------------------------------------
@@ -52,11 +75,11 @@ app.use(
 app.use("/v1/*", async (c, next) => {
   if (!c.env.AUTH_TOKEN) return serverMisconfigured();
   const token = extractBearer(c);
-  const principal = await resolvePrincipal(c, token);
+  const principal = await resolvePrincipal(c, c.env, token);
   if (!principal) return unauthorized();
   c.set("principal", principal);
   // Record usage non-blocking
-  recordVirtualKeyUse(c.env, (p) => c.executionCtx.waitUntil(p as Promise<unknown>), principal);
+  // recordVirtualKeyUse — no-op (counters moved to DO/Analytics)
   return next();
 });
 
@@ -67,15 +90,15 @@ app.use("/v1/*", async (c, next) => {
 // ---------------------------------------------------------------------------
 app.use("/api/oauth/antigravity/authorize", async (c, next) => {
   if (!c.env.AUTH_TOKEN) return serverMisconfigured();
-  const principal = await resolvePrincipal(c, extractBearer(c));
-  if (!principal || principal.kind !== "master") return unauthorized("Apenas o admin pode iniciar o fluxo OAuth");
+  const principal = await resolvePrincipal(c, c.env, extractBearer(c));
+  if (!principal || principal.kind !== "master") return unauthorized();
   return next();
 });
 
 app.use("/api/oauth/antigravity/import", async (c, next) => {
   if (!c.env.AUTH_TOKEN) return serverMisconfigured();
-  const principal = await resolvePrincipal(c, extractBearer(c));
-  if (!principal || principal.kind !== "master") return unauthorized("Apenas o admin pode importar credenciais");
+  const principal = await resolvePrincipal(c, c.env, extractBearer(c));
+  if (!principal || principal.kind !== "master") return unauthorized();
   return next();
 });
 
@@ -87,7 +110,7 @@ app.use("/api/mcp/*", async (c, next) => {
     return c.json({ error: { message: "Servidor MCP desabilitado. Defina ENABLE_MCP_SERVER=true para habilitar." } }, 404);
   }
   if (!c.env.AUTH_TOKEN) return serverMisconfigured();
-  const principal = await resolvePrincipal(c, extractBearer(c));
+  const principal = await resolvePrincipal(c, c.env, extractBearer(c));
   if (!principal) return unauthorized();
   return next();
 });
@@ -100,7 +123,7 @@ app.all("/api/v1/vscode/:token/*", async (c) => {
   const url = new URL(c.req.url);
   url.pathname = path;
   const newReq = new Request(url.toString(), c.req.raw);
-  return app.fetch(newReq, c.env, c.executionCtx);
+  return app.fetch(newReq, c.env, c.executionCtx as any);
 });
 
 // ---------------------------------------------------------------------------
@@ -172,7 +195,7 @@ app.post("/v1/chat/completions", async (c) => {
       body = applyContextCompression(body, body.output_style || c.env.DEFAULT_OUTPUT_STYLE);
     }
     const _keyId = (c.get("principal") as { id: string } | null)?.id;
-    return await dispatchWithCascade(body, c.env, _keyId ?? undefined);
+    return await dispatchWithCascade(body, c.env, c.executionCtx as any);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return new Response(
@@ -191,7 +214,7 @@ app.post("/v1/messages", async (c) => {
     const openAIBody = formatAnthropicToOpenAI(body);
     const stream = body.stream ?? false;
     const _princId = (c.get("principal") as { id: string } | null)?.id;
-    const response = await dispatchWithCascade(openAIBody, c.env, _princId ?? undefined);
+    const response = await dispatchWithCascade(openAIBody, c.env, c.executionCtx as any);
     if (stream) {
       const transformer = createOpenAIToAnthropicTransformStream(body.model);
       const outStream = response.body ? response.body.pipeThrough(transformer) : null;
@@ -220,7 +243,7 @@ app.post("/v1/responses", async (c) => {
     stream: body.stream as boolean | undefined,
   };
   const _rspKeyId = (c.get("principal") as { id: string } | null)?.id;
-  return dispatchWithCascade(chatReq, c.env, _rspKeyId ?? undefined);
+  return dispatchWithCascade(chatReq, c.env, c.executionCtx as any);
 });
 
 // ---------------------------------------------------------------------------

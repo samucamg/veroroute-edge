@@ -27,9 +27,9 @@ export const adminRouter = new Hono<{ Bindings: EnvBindings; Variables: any }>()
 adminRouter.use("*", async (c, next) => {
   if (!c.env.AUTH_TOKEN) return serverMisconfigured();
   const token = extractBearer(c);
-  const principal = await resolvePrincipal(c, token);
+  const principal = await resolvePrincipal(c, c.env, token);
   if (!principal || principal.kind !== "master") {
-    return unauthorized("Acesso ao admin requer o AUTH_TOKEN mestre");
+    return unauthorized();
   }
   return next();
 });

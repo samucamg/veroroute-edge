@@ -12,6 +12,19 @@ const usageCounters: Record<string, number> = {};
 let roundRobinIndex = 0;
 let lastKnownGoodCandidate: TargetCandidate | null = null;
 const sessionMap: Map<string, { candidate: TargetCandidate; expires: number }> = new Map();
+const MAX_SESSION_MAP = 2000;
+
+function purgeSessionMap() {
+  if (sessionMap.size <= MAX_SESSION_MAP) return;
+  const now = Date.now();
+  for (const [k, v] of sessionMap) {
+    if (v.expires < now) sessionMap.delete(k);
+  }
+  if (sessionMap.size > MAX_SESSION_MAP) {
+    const sorted = [...sessionMap.entries()].sort((a, b) => a[1].expires - b[1].expires);
+    for (const [k] of sorted.slice(0, sessionMap.size - MAX_SESSION_MAP)) sessionMap.delete(k);
+  }
+}
 
 function shuffle<T>(arr: T[]): T[] {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -96,5 +109,5 @@ export function recordCandidateSuccess(candidate: TargetCandidate, sessionId?: s
   const key = candidate.provider + ":" + candidate.model;
   usageCounters[key] = (usageCounters[key] || 0) + 1;
   lastKnownGoodCandidate = candidate;
-  if (sessionId) sessionMap.set(sessionId, { candidate, expires: Date.now() + 10 * 60 * 1000 });
+  if (sessionId) sessionMap.set(sessionId, { candidate, expires: Date.now() + 10 * 60 * 1000 }); purgeSessionMap();
 }

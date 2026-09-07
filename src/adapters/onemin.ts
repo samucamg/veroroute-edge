@@ -1,182 +1,149 @@
-import { injectToolCallingPrompt, parseEmulatedToolCalls, makeStreamingToolCallAccumulator } from "./toolEmulation";
-import type {
-  ChatCompletionChunk,
-  ChatCompletionRequest,
-  ChatCompletionResponse,
-} from "@/types/openai";
+import type { ChatCompletionRequest, ChatCompletionResponse, ChatCompletionChunk } from "@/types/openai";
 
+const ONEMIN_BASE = "https://api.1min.ai/api/features";
+
+/**
+ * Execute 1min.ai request — clean adapter, no internal tool emulation.
+ * Tool emulation is handled centrally by cascade.ts.
+ */
 export async function executeOneMinAI(
   request: ChatCompletionRequest,
   apiKey: string,
   modelName: string
 ): Promise<Response> {
-  if (!apiKey) throw new Error("Chave de API do 1min.ai nao configurada");
-
-  const hasTools = !!(request.tools && request.tools.length > 0);
-  const declaredTools = request.tools;
-  const processedRequest = hasTools ? injectToolCallingPrompt(request) : request;
-
-  let formattedPrompt = "";
-  for (const msg of processedRequest.messages) {
-    const roleLabel =
-      msg.role === "system" ? "System"
-      : msg.role === "assistant" ? "Assistant"
-      : msg.role === "tool" ? "Tool"
-      : "Human";
-    const text = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
-    formattedPrompt += roleLabel + ": " + text + "\n\n";
-  }
+  if (!apiKey) throw new Error("1min.ai: API key not configured");
 
   const cleanModel = modelName.replace("1min/", "");
-  const isStreaming = processedRequest.stream ?? false;
-  const apiUrl = isStreaming
-    ? "https://api.1min.ai/api/chat-with-ai?isStreaming=true"
-    : "https://api.1min.ai/api/chat-with-ai";
+  const isStream = request.stream ?? false;
 
-  const requestBody = {
+  const body = {
     type: "CHAT",
-    model: cleanModel || "gpt-4o",
-    promptObject: {
-      prompt: formattedPrompt.trim(),
-      settings: { temperature: processedRequest.temperature ?? 0.7 },
-    },
+    model: cleanModel,
+    promptObject: request.messages.map((m) => ({
+      role: m.role,
+      content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+    })),
+    // Forward native tool fields only if present (cascade strips them for emulation)
+    ...(request.tools ? { tools: request.tools } : {}),
+    ...(request.tool_choice ? { tool_choice: request.tool_choice } : {}),
   };
 
-  const response = await fetch(apiUrl, {
+  const response = await fetch(ONEMIN_BASE, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "API-KEY": apiKey,
     },
-    body: JSON.stringify(requestBody),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
-    const errText = await response.text();
+    const errText = await response.text().catch(() => "");
     return new Response(
-      JSON.stringify({ error: { message: "Erro 1min.ai (" + response.status + "): " + errText.slice(0, 300), status: response.status } }),
+      JSON.stringify({ error: { message: `1min.ai (${response.status}): ${errText.slice(0, 200)}`, status: response.status } }),
       { status: response.status, headers: { "Content-Type": "application/json" } }
     );
   }
 
-  // --- Non-Streaming ---
-  if (!isStreaming) {
-    const rawData = (await response.json()) as Record<string, unknown>;
-    let rawContent = "";
-    if (typeof rawData.result === "string") {
-      rawContent = rawData.result;
-    } else if (rawData.data && typeof (rawData.data as Record<string, unknown>).result === "string") {
-      rawContent = (rawData.data as Record<string, unknown>).result as string;
-    } else if (typeof rawData.content === "string") {
-      rawContent = rawData.content;
-    } else {
-      rawContent = JSON.stringify(rawData);
-    }
+  if (!isStream) {
+    const raw = await response.json() as any;
+    const content = raw?.aiRecord?.aiRecordDetail?.resultObject?.content
+      || raw?.aiRecord?.aiRecordDetail?.resultObject
+      || raw?.result || "";
+    const textContent = typeof content === "string" ? content : JSON.stringify(content);
 
-    const { cleanContent, toolCalls } = hasTools
-      ? parseEmulatedToolCalls(rawContent, declaredTools)
-      : { cleanContent: rawContent, toolCalls: undefined };
-
-    const openAiResponse: ChatCompletionResponse = {
-      id: "chatcmpl-" + crypto.randomUUID().replace(/-/g, "").slice(0, 16),
+    const completion: ChatCompletionResponse = {
+      id: `chatcmpl-${crypto.randomUUID().slice(0, 10)}`,
       object: "chat.completion",
       created: Math.floor(Date.now() / 1000),
-      model: modelName,
+      model: cleanModel,
       choices: [{
         index: 0,
-        message: {
-          role: "assistant",
-          content: cleanContent,
-          tool_calls: toolCalls,
-        },
-        finish_reason: toolCalls && toolCalls.length > 0 ? "tool_calls" : "stop",
+        message: { role: "assistant", content: textContent },
+        finish_reason: "stop",
       }],
       usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
     };
-    return new Response(JSON.stringify(openAiResponse), { headers: { "Content-Type": "application/json" } });
+    return Response.json(completion);
   }
 
-  // --- Streaming SSE ---
-  // When tool-calling is emulated in streaming mode, we must accumulate the full
-  // response before we can detect and convert tool calls.
-  if (hasTools) {
-    // Accumulate the entire streaming response, then emit a single non-streaming response.
-    // This is correct behaviour: providers that need emulation do not support streaming
-    // tool calls natively, so we collapse the stream.
-    const accum = makeStreamingToolCallAccumulator((result) => result, declaredTools);
-    const reader = response.body?.getReader();
-    if (!reader) return new Response("Sem corpo de resposta do 1min.ai", { status: 500 });
-    const decoder = new TextDecoder();
-    let done = false;
-    while (!done) {
-      const { done: d, value } = await reader.read();
-      done = d;
-      if (value) accum.accumulate(decoder.decode(value, { stream: true }));
-    }
-    let parseResult: { cleanContent: string | null; toolCalls?: import("@/types/openai").ToolCall[] };
-    accum.flush = () => { parseResult = parseEmulatedToolCalls(/* buffer from closure */"", declaredTools); };
-    // Re-invoke directly since the accumulator stores buffer internally
-    // We need to get the result - just call parse on the accumulated text:
-    const accumulated = decoder.decode(); // flush remainder
-    parseResult = parseEmulatedToolCalls(accumulated, declaredTools);
-
-    // Build a proper OpenAI completion response
-    const toolAiResponse: ChatCompletionResponse = {
-      id: "chatcmpl-" + crypto.randomUUID().replace(/-/g, "").slice(0, 16),
-      object: "chat.completion",
-      created: Math.floor(Date.now() / 1000),
-      model: modelName,
-      choices: [{
-        index: 0,
-        message: {
-          role: "assistant",
-          content: parseResult!.cleanContent,
-          tool_calls: parseResult!.toolCalls,
-        },
-        finish_reason: parseResult!.toolCalls ? "tool_calls" : "stop",
-      }],
-      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-    };
-    return new Response(JSON.stringify(toolAiResponse), { headers: { "Content-Type": "application/json" } });
+  // Streaming: transform 1min SSE to OpenAI-compatible SSE
+  if (!response.body) {
+    return new Response("No stream body", { status: 502 });
   }
 
-  // Regular streaming (no tools)
-  const { readable, writable } = new TransformStream();
-  const writer = writable.getWriter();
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
   const encoder = new TextEncoder();
-  const decoder2 = new TextDecoder();
-  const reader2 = response.body?.getReader();
-  if (!reader2) return new Response("Sem corpo de resposta do 1min.ai", { status: 500 });
 
-  (async () => {
-    try {
-      while (true) {
-        const { done, value } = await reader2.read();
-        if (done) break;
-        const text = decoder2.decode(value, { stream: true });
-        if (!text) continue;
-        const chunk: ChatCompletionChunk = {
-          id: "chatcmpl-" + crypto.randomUUID().replace(/-/g, "").slice(0, 12),
-          object: "chat.completion.chunk",
-          created: Math.floor(Date.now() / 1000),
-          model: modelName,
-          choices: [{ index: 0, delta: { content: text }, finish_reason: null }],
-        };
-        await writer.write(encoder.encode("data: " + JSON.stringify(chunk) + "\n\n"));
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          // Send final chunk and DONE
+          const finalChunk: ChatCompletionChunk = {
+            id: `chatcmpl-${crypto.randomUUID().slice(0, 10)}`,
+            object: "chat.completion.chunk",
+            created: Math.floor(Date.now() / 1000),
+            model: cleanModel,
+            choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+          };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(finalChunk)}\n\ndata: [DONE]\n\n`));
+          controller.close();
+          return;
+        }
+
+        const text = decoder.decode(value, { stream: true });
+        // 1min may return plain text or SSE lines
+        const lines = text.split("\n");
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+
+          let content = trimmed;
+          if (trimmed.startsWith("data: ")) {
+            const data = trimmed.slice(6);
+            if (data === "[DONE]") {
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+              continue;
+            }
+            try {
+              const parsed = JSON.parse(data);
+              // If already OpenAI-format, pass through
+              if (parsed.choices) {
+                controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+                continue;
+              }
+              content = parsed.content || parsed.text || data;
+            } catch {
+              content = data;
+            }
+          }
+
+          const chunk: ChatCompletionChunk = {
+            id: `chatcmpl-${crypto.randomUUID().slice(0, 10)}`,
+            object: "chat.completion.chunk",
+            created: Math.floor(Date.now() / 1000),
+            model: cleanModel,
+            choices: [{ index: 0, delta: { content }, finish_reason: null }],
+          };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+        }
+      } catch (err) {
+        controller.error(err);
       }
-      await writer.write(encoder.encode("data: [DONE]\n\n"));
-      await writer.close();
-    } catch (err) {
-      console.error("Erro no streaming do 1min.ai:", err);
-      try { await writer.abort(err); } catch { /* ignore */ }
-    }
-  })();
+    },
+    cancel() {
+      reader.cancel().catch(() => {});
+    },
+  });
 
-  return new Response(readable, {
+  return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
+      Connection: "keep-alive",
     },
   });
 }
