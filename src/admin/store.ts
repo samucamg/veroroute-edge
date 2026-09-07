@@ -1,4 +1,5 @@
 import type { EnvBindings } from "@/types/provider";
+import type { ProviderCredential } from "@/routing/proxy";
 
 // =============================================================================
 // Store Administrativo do VeroRoute Edge (persistido no Cloudflare KV OMNI_KEYS)
@@ -302,53 +303,77 @@ export function slugifyProviderId(name: string): string {
     .slice(0, 32) || "provider";
 }
 
-export async function getCustomProviderKeys(env: EnvBindings, providerId: string): Promise<string[]> {
+export async function getStoredProviderCredentials(env: EnvBindings, providerId: string): Promise<ProviderCredential[]> {
   const kv = env.OMNI_KEYS;
   if (!kv) return [];
-  const raw = await kv.get(KV_CUSTOM_KEYS_PREFIX + providerId);
-  if (!raw) return [];
-  return raw.split(",").map((k) => k.trim()).filter(Boolean);
+  const raw = await kv.get("credentials_" + providerId);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as ProviderCredential[];
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter((item) => item && typeof item.apiKey === "string" && item.apiKey.trim())
+          .map((item) => ({ apiKey: item.apiKey.trim(), proxyUrl: item.proxyUrl?.trim() || undefined }));
+      }
+    } catch { /* fall back to legacy storage */ }
+  }
+  const legacy = await kv.get(KV_CUSTOM_KEYS_PREFIX + providerId);
+  return (legacy || "").split(",").map((apiKey) => apiKey.trim()).filter(Boolean).map((apiKey) => ({ apiKey }));
 }
 
-export async function setCustomProviderKeys(
+export async function setStoredProviderCredentials(
   env: EnvBindings,
   providerId: string,
-  keys: string[]
+  credentials: ProviderCredential[]
 ): Promise<void> {
   const kv = env.OMNI_KEYS;
   if (!kv) return;
-  const clean = Array.from(new Set(keys.map((k) => k.trim()).filter(Boolean)));
-  if (clean.length === 0) {
-    await kv.delete(KV_CUSTOM_KEYS_PREFIX + providerId);
+  const clean = credentials
+    .map((item) => ({ apiKey: item.apiKey.trim(), proxyUrl: item.proxyUrl?.trim() || undefined }))
+    .filter((item) => item.apiKey);
+  const unique = Array.from(new Map(clean.map((item) => [item.apiKey + "\n" + (item.proxyUrl || ""), item])).values());
+  if (unique.length === 0) {
+    await Promise.all([kv.delete("credentials_" + providerId), kv.delete(KV_CUSTOM_KEYS_PREFIX + providerId)]);
   } else {
-    await kv.put(KV_CUSTOM_KEYS_PREFIX + providerId, clean.join(","));
+    await Promise.all([
+      kv.put("credentials_" + providerId, JSON.stringify(unique)),
+      kv.put(KV_CUSTOM_KEYS_PREFIX + providerId, Array.from(new Set(unique.map((item) => item.apiKey))).join(",")),
+    ]);
   }
   await mutateAdminConfig(env, (cfg) => {
-    if (cfg.customProviders[providerId]) {
-      cfg.customProviders[providerId].apiKeys = clean;
-    }
+    if (cfg.customProviders[providerId]) cfg.customProviders[providerId].apiKeys = unique.map((item) => item.apiKey);
   });
 }
 
-export async function appendProviderKeys(
+export async function getCustomProviderKeys(env: EnvBindings, providerId: string): Promise<string[]> {
+  return (await getStoredProviderCredentials(env, providerId)).map((item) => item.apiKey);
+}
+
+export async function setCustomProviderKeys(env: EnvBindings, providerId: string, keys: string[]): Promise<void> {
+  await setStoredProviderCredentials(env, providerId, keys.map((apiKey) => ({ apiKey })));
+}
+
+export async function appendProviderCredentials(
   env: EnvBindings,
   providerId: string,
-  newKeys: string[]
-): Promise<string[]> {
-  const existing = await getCustomProviderKeys(env, providerId);
-  const merged = Array.from(new Set([...existing, ...newKeys.map((k) => k.trim()).filter(Boolean)]));
-  await setCustomProviderKeys(env, providerId, merged);
+  newCredentials: ProviderCredential[]
+): Promise<ProviderCredential[]> {
+  const existing = await getStoredProviderCredentials(env, providerId);
+  const merged = Array.from(new Map([...existing, ...newCredentials]
+    .map((item) => ({ apiKey: item.apiKey.trim(), proxyUrl: item.proxyUrl?.trim() || undefined }))
+    .filter((item) => item.apiKey)
+    .map((item) => [item.apiKey + "\n" + (item.proxyUrl || ""), item])).values());
+  await setStoredProviderCredentials(env, providerId, merged);
   return merged;
 }
 
-export async function removeProviderKeys(
-  env: EnvBindings,
-  providerId: string,
-  keysToRemove: string[]
-): Promise<string[]> {
-  const existing = await getCustomProviderKeys(env, providerId);
-  const removeSet = new Set(keysToRemove.map((k) => k.trim()));
-  const remaining = existing.filter((k) => !removeSet.has(k));
-  await setCustomProviderKeys(env, providerId, remaining);
-  return remaining;
+export async function appendProviderKeys(env: EnvBindings, providerId: string, newKeys: string[]): Promise<string[]> {
+  return (await appendProviderCredentials(env, providerId, newKeys.map((apiKey) => ({ apiKey })))).map((item) => item.apiKey);
+}
+
+export async function removeProviderKeys(env: EnvBindings, providerId: string, keysToRemove: string[]): Promise<string[]> {
+  const removeSet = new Set(keysToRemove.map((key) => key.trim()));
+  const remaining = (await getStoredProviderCredentials(env, providerId)).filter((item) => !removeSet.has(item.apiKey));
+  await setStoredProviderCredentials(env, providerId, remaining);
+  return remaining.map((item) => item.apiKey);
 }

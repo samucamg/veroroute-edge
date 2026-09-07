@@ -241,15 +241,19 @@ export function renderDashboardHtml(): string {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0.4rem 0.6rem;
-      background: rgba(255,255,255,0.02);
-      border: 1px solid var(--card-border);
+      gap: 0.6rem;
+      padding: 0.55rem 0.7rem;
+      background: #111827;
+      border: 1px solid rgba(148,163,184,0.3);
       border-radius: 6px;
+      color: #f8fafc;
       font-size: 0.8rem;
     }
-    .model-select-item:hover {
-      background: rgba(255,255,255,0.05);
-    }
+    .model-select-item:hover { background: #1e293b; border-color: rgba(56,189,248,0.6); }
+    .model-select-name { color: #f8fafc !important; opacity: 1; font-weight: 600; }
+    #mpm-discovered-list { background: #0b1220; padding: 0.5rem; border: 1px solid rgba(148,163,184,0.22); border-radius: 8px; }
+    #mpm-model-search { color: #f8fafc !important; background: #111827 !important; }
+    #mpm-model-search::placeholder { color: #94a3b8 !important; opacity: 1; }
 
     main {
       flex: 1;
@@ -1148,8 +1152,10 @@ dsh --model combo-super-payload
           Adicionar Chave(s) ao Pool de Balanceamento:
         </label>
         <textarea id="mpk-new-key" rows="3" placeholder="Cole uma ou mais chaves (separe por vírgula ou uma por linha)" style="width: 100%; font-family: monospace; font-size: 0.82rem;"></textarea>
+        <label style="display:block; font-size:0.82rem; color:var(--text-muted); margin:0.65rem 0 0.35rem;">Proxy HTTP(S) opcional para estas chaves:</label>
+        <input id="mpk-proxy-url" type="url" placeholder="https://relay.exemplo.com/proxy?url={url}" style="width:100%; font-family:monospace; font-size:0.82rem;" />
         <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.3rem;">
-          💡 O VeroRoute Edge rotaciona automaticamente entre todas as chaves adicionadas para evitar rate-limits (HTTP 429).
+          💡 O pool rotaciona as chaves automaticamente. O proxy deve ser um relay HTTP(S): use <code>{url}</code> no endereço ou o destino será enviado em <code>?url=</code>. O relay verá a chave e o conteúdo.
         </div>
       </div>
 
@@ -1658,6 +1664,7 @@ dsh --model combo-super-payload
         '<strong>Status do Pool:</strong> ' + (count > 0 ? '<span style="color:var(--emerald); font-weight:600;">' + count + ' chave(s) ativa(s) no balanceamento</span>' : '<span style="color:var(--amber);">Nenhuma chave cadastrada neste Worker</span>');
 
       document.getElementById('mpk-new-key').value = '';
+      document.getElementById('mpk-proxy-url').value = '';
       document.getElementById('modal-provider-keys').classList.add('active');
     }
 
@@ -1673,17 +1680,20 @@ dsh --model combo-super-payload
         return;
       }
       const keys = val.split(/[\\n,]+/).map(function(s) { return s.trim(); }).filter(Boolean);
+      const proxyUrl = document.getElementById('mpk-proxy-url').value.trim();
+      if (proxyUrl && !proxyUrl.toLowerCase().startsWith('https://')) { showToast('O proxy deve começar com https://', 'error'); return; }
       try {
         const res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/keys', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keys: keys })
+          body: JSON.stringify({ credentials: keys.map(function(apiKey) { return { apiKey: apiKey, proxyUrl: proxyUrl || undefined }; }) })
         });
         const data = await res.json();
         if (data.ok) {
           const poolCount = data.keyCount !== undefined ? data.keyCount : (data.keys ? data.keys.length : keys.length);
           showToast('Chave(s) salva(s) com sucesso! Pool atual: ' + poolCount + ' chaves.', 'success');
           document.getElementById('mpk-new-key').value = '';
+          document.getElementById('mpk-proxy-url').value = '';
           await loadAdmin();
           openProviderKeysModal(activeModalProviderId);
         } else {
@@ -1837,7 +1847,7 @@ dsh --model combo-super-payload
             item.innerHTML =
               '<div style="display:flex; align-items:center; gap:0.5rem; overflow:hidden;">' +
                 '<input type="checkbox" class="disc-model-cb" value="' + escapeHtml(m) + '" ' + (isAlreadyActive ? 'checked disabled' : '') + ' style="cursor:pointer; flex-shrink:0;" />' +
-                '<span style="font-family:monospace; font-size:0.8rem; word-break:break-all;">' + escapeHtml(m) + '</span>' +
+                '<span class="model-select-name" style="font-family:monospace; font-size:0.8rem; word-break:break-all;">' + escapeHtml(m) + '</span>' +
               '</div>' +
               (isAlreadyActive ? '<span style="font-size:0.72rem; color:var(--emerald); font-weight:600; flex-shrink:0;">ativo</span>' : '<button type="button" class="btn btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.7rem; flex-shrink:0;" onclick="quickAddSingleModel(&apos;' + escapeHtml(m) + '&apos;)">+ Adicionar</button>');
             listContainer.appendChild(item);
@@ -2007,7 +2017,7 @@ dsh --model combo-super-payload
       } catch (e) { showToast('Erro: ' + e.message, 'error'); }
     }
 
-    async function addCustomProvider() {
+    async function addCustomProvider(providerIdOverride) {
       const name = document.getElementById('acp-name').value.trim();
       const baseUrl = document.getElementById('acp-baseurl').value.trim();
       const protocol = document.getElementById('acp-protocol').value;
@@ -2024,6 +2034,7 @@ dsh --model combo-super-payload
       }
 
       const body = {
+        id: providerIdOverride || undefined,
         name: name,
         baseUrl: baseUrl,
         protocol: protocol,
@@ -2101,13 +2112,34 @@ dsh --model combo-super-payload
             '<span style="font-size:0.75rem; color:var(--text-muted);">' + escapeHtml(p.description) + '</span>' +
             '<span style="font-size:0.75rem; color:var(--emerald);">' + escapeHtml(p.freeTierNotes) + '</span>' +
             '<span style="font-size:0.72rem; color:var(--primary); word-break:break-all;">Modelos: ' + escapeHtml((p.recommendedModels || []).slice(0, 2).join(', ')) + '</span>' +
-            '<button class="btn btn-secondary" style="margin-top:0.5rem; padding:0.35rem 0.6rem; font-size:0.75rem;" onclick="applyPreset(&apos;' + escapeHtml(p.id) + '&apos;)">⚡ Usar Template</button>';
+            '<div style="display:flex; gap:0.4rem; margin-top:0.5rem; flex-wrap:wrap;">' +
+              '<button class="btn btn-secondary" style="padding:0.35rem 0.6rem; font-size:0.75rem;" onclick="applyPreset(&apos;' + escapeHtml(p.id) + '&apos;)">⚡ Usar Template</button>' +
+              '<button class="btn btn-secondary" style="padding:0.35rem 0.6rem; font-size:0.75rem; color:var(--primary);" onclick="usePresetAndSearchModels(&apos;' + escapeHtml(p.id) + '&apos;)">🔍 Buscar Modelos</button>' +
+            '</div>';
           grid.appendChild(box);
         });
         window._presetsData = data.presets || [];
       } catch (e) {
         grid.innerHTML = '<span style="color:var(--rose);">Erro ao carregar templates: ' + e.message + '</span>';
       }
+    }
+
+    async function usePresetAndSearchModels(presetId) {
+      const preset = (window._presetsData || []).find(function(x) { return x.id === presetId; });
+      if (!preset) return;
+      applyPreset(presetId);
+      let provider = (window._providersData || []).find(function(x) { return x.id === preset.id; });
+      if (!provider) {
+        const keyValue = document.getElementById('acp-keys').value.trim();
+        if (!keyValue && preset.id !== 'cloudflare-ai' && preset.id !== 'openrouter-free') {
+          showToast('Template aplicado. Informe a chave e clique novamente em Buscar Modelos.', 'info');
+          document.getElementById('acp-keys').focus();
+          return;
+        }
+        await addCustomProvider(preset.id);
+        provider = (window._providersData || []).find(function(x) { return x.id === preset.id; });
+      }
+      if (provider) openProviderModelsModal(provider.id);
     }
 
     function applyPreset(presetId) {

@@ -4,7 +4,7 @@ import { executeCloudflareAI } from "@/adapters/cloudflare-ai";
 import { executeOneMinAI } from "@/adapters/onemin";
 import { executeOpenAICompatible } from "@/adapters/openai-compatible";
 import { getValidAntigravityAccessToken } from "@/oauth/antigravity";
-import { markKeyRateLimited, selectActiveKey } from "./keyPool";
+import { markKeyRateLimited, selectActiveCredential } from "./keyPool";
 import { getAdminConfig } from "@/admin/store";
 import { getProviderConfig, registerCustomProvider } from "@/config/providers";
 import { applyRoutingStrategy, recordCandidateSuccess, type TargetCandidate } from "./strategies";
@@ -164,7 +164,8 @@ export async function dispatchWithCascade(
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        const apiKey = await selectActiveKey(env, candidate.provider);
+        const credential = await selectActiveCredential(env, candidate.provider);
+        const apiKey = credential.apiKey;
 
         let response: Response;
         try {
@@ -178,9 +179,9 @@ export async function dispatchWithCascade(
               return executeAntigravityRequest(outbound, antigravResult.accessToken, antigravResult.projectId || "", candidate.model);
             }
             if (candidate.provider === "1min") {
-              return executeOneMinAI(outbound, apiKey, candidate.model);
+              return executeOneMinAI(outbound, apiKey, candidate.model, credential.proxyUrl);
             }
-            return executeOpenAICompatible(outbound, candidate.provider, apiKey, candidate.model);
+            return executeOpenAICompatible(outbound, candidate.provider, apiKey, candidate.model, credential.proxyUrl);
           }, candidateTimeout);
         } catch (err) {
           if (err instanceof UpstreamTimeout) {

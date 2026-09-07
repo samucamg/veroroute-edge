@@ -1,4 +1,5 @@
 import type { ChatCompletionRequest, ChatCompletionResponse, ChatCompletionChunk } from "@/types/openai";
+import { proxyFetch } from "@/routing/proxy";
 
 const ONEMIN_BASE = "https://api.1min.ai/api/features";
 
@@ -9,7 +10,8 @@ const ONEMIN_BASE = "https://api.1min.ai/api/features";
 export async function executeOneMinAI(
   request: ChatCompletionRequest,
   apiKey: string,
-  modelName: string
+  modelName: string,
+  proxyUrl?: string
 ): Promise<Response> {
   if (!apiKey) throw new Error("1min.ai: API key not configured");
 
@@ -28,14 +30,14 @@ export async function executeOneMinAI(
     ...(request.tool_choice ? { tool_choice: request.tool_choice } : {}),
   };
 
-  const response = await fetch(ONEMIN_BASE, {
+  const response = await proxyFetch(ONEMIN_BASE, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "API-KEY": apiKey,
     },
     body: JSON.stringify(body),
-  });
+  }, proxyUrl);
 
   if (!response.ok) {
     const errText = await response.text().catch(() => "");

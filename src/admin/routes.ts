@@ -6,15 +6,17 @@ import {
   deleteCombo,
   slugifyProviderId,
   appendProviderKeys,
+  appendProviderCredentials,
+  setStoredProviderCredentials,
   removeProviderKeys,
   getCustomProviderKeys,
-  setCustomProviderKeys,
   type CustomProvider,
   type ComboConfig,
 } from "./store";
 import { extractBearer, resolvePrincipal, serverMisconfigured, unauthorized, maskSecret } from "./auth";
 import { executeOpenAICompatible } from "@/adapters/openai-compatible";
-import { selectActiveKey } from "@/routing/keyPool";
+import { selectActiveCredential } from "@/routing/keyPool";
+import { proxyFetch, validateProxyUrl } from "@/routing/proxy";
 import { getAntigravityOAuthCredentials } from "./store";
 import type { EnvBindings } from "@/types/provider";
 import { getUsageSummary } from "@/routing/costTracker";
@@ -157,16 +159,17 @@ adminRouter.delete("/providers/:id", async (c) => {
 
 adminRouter.post("/providers/:id/keys", async (c) => {
   const id = c.req.param("id");
-  const body = (await c.req.json()) as { keys: string[] };
-  const newKeys = (body.keys || []).map((k) => k.trim()).filter(Boolean);
-  const merged = await appendProviderKeys(c.env, id, newKeys);
-  return c.json({
-    ok: true,
-    id,
-    keyCount: merged.length,
-    count: merged.length,
-    keys: merged.map(maskSecret),
-  });
+  const body = (await c.req.json()) as { keys?: string[]; credentials?: Array<{ apiKey?: string; proxyUrl?: string }> };
+  const credentials = (body.credentials || []).map((item) => ({ apiKey: item.apiKey?.trim() || "", proxyUrl: item.proxyUrl?.trim() || undefined }));
+  credentials.push(...(body.keys || []).map((apiKey) => ({ apiKey: apiKey.trim(), proxyUrl: undefined })));
+  for (const item of credentials) {
+    if (item.proxyUrl) {
+      try { validateProxyUrl(item.proxyUrl); }
+      catch { return c.json({ error: { message: "Proxy deve usar uma URL HTTPS pública e sem credenciais embutidas", type: "validation" } }, 400); }
+    }
+  }
+  const merged = await appendProviderCredentials(c.env, id, credentials.filter((item) => item.apiKey));
+  return c.json({ ok: true, id, keyCount: merged.length, count: merged.length, keys: merged.map((item) => ({ key: maskSecret(item.apiKey), proxyUrl: item.proxyUrl || "" })) });
 });
 
 adminRouter.delete("/providers/:id/keys", async (c) => {
@@ -175,7 +178,7 @@ adminRouter.delete("/providers/:id/keys", async (c) => {
   let remaining: string[];
   if (!body.keys || body.keys.length === 0) {
     // Limpar todas as chaves deste provedor
-    await setCustomProviderKeys(c.env, id, []);
+    await setStoredProviderCredentials(c.env, id, []);
     remaining = [];
   } else {
     remaining = await removeProviderKeys(c.env, id, body.keys);
@@ -232,14 +235,13 @@ adminRouter.post("/providers/:id/fetch-models", async (c) => {
   const prov = cfg.customProviders[id] || PROVIDER_REGISTRY[id];
   const preset = FREE_PROVIDER_PRESETS.find((p) => p.id === id);
 
-  // 1. Obter chave de API (do body, do KV ou do keyPool)
-  let apiKey = body.apiKey?.trim();
+  // Use the same pool entry for its API key and optional proxy URL.
+  let apiKey = body.apiKey?.trim() || "";
+  let proxyUrl: string | undefined;
   if (!apiKey) {
-    const customKeys = await getCustomProviderKeys(c.env, id);
-    apiKey = customKeys[0];
-    if (!apiKey) {
-      apiKey = await selectActiveKey(c.env, id);
-    }
+    const selectedCredential = await selectActiveCredential(c.env, id);
+    apiKey = selectedCredential.apiKey;
+    proxyUrl = selectedCredential.proxyUrl;
   }
 
   const baseUrl = prov?.baseUrl || preset?.baseUrl || "";
@@ -292,7 +294,7 @@ adminRouter.post("/providers/:id/fetch-models", async (c) => {
       }
 
       if (url) {
-        const res = await fetch(url, { headers, signal: controller.signal });
+        const res = await proxyFetch(url, { headers, signal: controller.signal }, proxyUrl);
         clearTimeout(timeoutId);
 
         if (res.ok) {
@@ -653,7 +655,8 @@ adminRouter.post("/combos/test", async (c) => {
     if (!provCfg) {
       return { provider: target.provider, model: target.model, status: 404, latency_ms: 0, success: false, error: "Provedor nao encontrado" };
     }
-    const apiKey = await selectActiveKey(c.env, target.provider);
+    const credential = await selectActiveCredential(c.env, target.provider);
+    const apiKey = credential.apiKey;
     if (!apiKey && target.provider !== "cloudflare-ai") {
       return { provider: target.provider, model: target.model, status: 401, latency_ms: 0, success: false, error: "Sem chave de API" };
     }
@@ -670,7 +673,7 @@ adminRouter.post("/combos/test", async (c) => {
     try {
       // M-10: per-target timeout
       const res = await Promise.race([
-        executeOpenAICompatible(testReq, target.provider, apiKey, target.model),
+        executeOpenAICompatible(testReq, target.provider, apiKey, target.model, credential.proxyUrl),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error("Timeout " + COMBO_TEST_TIMEOUT_MS + "ms")), COMBO_TEST_TIMEOUT_MS)
         ),

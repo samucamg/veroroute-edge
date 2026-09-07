@@ -1,78 +1,50 @@
 import type { EnvBindings } from "@/types/provider";
+import { getStoredProviderCredentials } from "@/admin/store";
+import type { ProviderCredential } from "./proxy";
 
-// Cache em memória LOCAL por isolate — serve como tier-1 (hot) cache
-// FIX 5: cooldowns também são persistidos no Cloudflare KV (OMNI_CACHE) para
-// que isolates em PoPs diferentes (SP, Ashburn, Frankfurt...) compartilhem o
-// estado de rate-limit. Isso evita que uma chave bloqueada por 429 num isolate
-// continue sendo usada por outro isolate que não tem a informação em memória.
 const keyRotationIndex: Record<string, number> = {};
 const keyCooldowns: Map<string, number> = new Map();
-
-/** Prefixo de chave no KV para cooldowns de API keys */
 const KV_COOLDOWN_PREFIX = "cooldown:";
 
-/**
- * Retorna a lista de chaves de API disponíveis para um determinado provedor
- */
-export async function getProviderKeys(env: EnvBindings, providerId: string): Promise<string[]> {
+function environmentCredentials(env: EnvBindings, providerId: string): ProviderCredential[] {
   const envKeyMap: Record<string, string | undefined> = {
-    openai: env.OPENAI_API_KEYS,
-    azure: env.AZURE_OPENAI_API_KEYS,
-    bedrock: env.BEDROCK_API_KEYS,
-    alibaba: env.ALIBABA_API_KEYS,
-    "1min": env.ONE_MIN_API_KEYS,
-    freeapikey: env.FREEAPIKEY_KEYS,
-    gemini: env.GEMINI_API_KEYS,
-    groq: env.GROQ_API_KEYS,
-    cerebras: env.CEREBRAS_API_KEYS,
-    sambanova: env.SAMBANOVA_API_KEYS,
-    mistral: env.MISTRAL_API_KEYS,
-    openrouter: env.OPENROUTER_API_KEYS,
-    deepseek: env.DEEPSEEK_API_KEYS,
-    pollinations: env.POLLINATIONS_API_KEYS,
-    tavily: env.TAVILY_API_KEYS,
-    serper: env.SERPER_API_KEYS,
-    firecrawl: env.FIRECRAWL_API_KEYS,
+    openai: env.OPENAI_API_KEYS, azure: env.AZURE_OPENAI_API_KEYS, bedrock: env.BEDROCK_API_KEYS,
+    alibaba: env.ALIBABA_API_KEYS, "1min": env.ONE_MIN_API_KEYS, freeapikey: env.FREEAPIKEY_KEYS,
+    gemini: env.GEMINI_API_KEYS, groq: env.GROQ_API_KEYS, cerebras: env.CEREBRAS_API_KEYS,
+    sambanova: env.SAMBANOVA_API_KEYS, mistral: env.MISTRAL_API_KEYS, openrouter: env.OPENROUTER_API_KEYS,
+    deepseek: env.DEEPSEEK_API_KEYS, pollinations: env.POLLINATIONS_API_KEYS, tavily: env.TAVILY_API_KEYS,
+    serper: env.SERPER_API_KEYS, firecrawl: env.FIRECRAWL_API_KEYS,
   };
-  const rawKeys = envKeyMap[providerId] || "";
-  let keys = rawKeys
-    .split(",")
-    .map((k) => k.trim())
-    .filter((k) => k.length > 0);
-  // Se houver KV configurado, tenta buscar chaves adicionais salvas
-  if (env.OMNI_KEYS) {
-    const kvKeys = await env.OMNI_KEYS.get("keys_" + providerId);
-    if (kvKeys) {
-      const extra = kvKeys
-        .split(",")
-        .map((k) => k.trim())
-        .filter((k) => k.length > 0);
-      keys = Array.from(new Set([...keys, ...extra]));
-    }
-  }
-  return keys;
+  return (envKeyMap[providerId] || "").split(",").map((apiKey) => apiKey.trim()).filter(Boolean).map((apiKey) => ({ apiKey }));
 }
 
-/**
- * FIX 5: Verifica se uma chave está em cooldown, consultando primeiro o cache
- * local em memória e depois o Cloudflare KV (para detectar cooldowns registrados
- * por outros isolates na mesma edge network).
- */
+export async function getProviderCredentials(env: EnvBindings, providerId: string): Promise<ProviderCredential[]> {
+  const all = [...environmentCredentials(env, providerId), ...await getStoredProviderCredentials(env, providerId)];
+  const seen = new Set<string>();
+  return all.filter((entry) => {
+    const id = entry.apiKey + "\n" + (entry.proxyUrl || "");
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+export async function getProviderKeys(env: EnvBindings, providerId: string): Promise<string[]> {
+  return (await getProviderCredentials(env, providerId)).map((entry) => entry.apiKey);
+}
+
 async function isKeyCooledDown(env: EnvBindings, apiKey: string): Promise<boolean> {
   const now = Date.now();
-  // Tier-1: memória local
   const localExpiry = keyCooldowns.get(apiKey);
   if (localExpiry !== undefined) {
     if (now < localExpiry) return true;
     keyCooldowns.delete(apiKey);
   }
-  // Tier-2: Cloudflare KV (compartilhado entre isolates globalmente)
   if (env.OMNI_CACHE) {
     const kvVal = await env.OMNI_CACHE.get(KV_COOLDOWN_PREFIX + apiKey);
     if (kvVal) {
       const kvExpiry = parseInt(kvVal, 10);
       if (!isNaN(kvExpiry) && now < kvExpiry) {
-        // Popula o cache local para evitar round-trips futuros no mesmo isolate
         keyCooldowns.set(apiKey, kvExpiry);
         return true;
       }
@@ -81,54 +53,27 @@ async function isKeyCooledDown(env: EnvBindings, apiKey: string): Promise<boolea
   return false;
 }
 
-/**
- * Seleciona a próxima chave válida (Round-Robin) ignorando as em cooldown (429/rate-limit)
- */
-export async function selectActiveKey(env: EnvBindings, providerId: string): Promise<string> {
-  const keys = await getProviderKeys(env, providerId);
-  if (keys.length === 0) {
-    return ""; // Provedores keyless como pollinations ou cloudflare-ai nativo
-  }
-  const now = Date.now();
+export async function selectActiveCredential(env: EnvBindings, providerId: string): Promise<ProviderCredential> {
+  const entries = await getProviderCredentials(env, providerId);
+  if (entries.length === 0) return { apiKey: "" };
   if (!keyRotationIndex[providerId]) keyRotationIndex[providerId] = 0;
-  // Tenta cada chave começando pelo índice atual de round-robin
-  for (let i = 0; i < keys.length; i++) {
-    const idx = (keyRotationIndex[providerId] + i) % keys.length;
-    const key = keys[idx];
-    const cooledDown = await isKeyCooledDown(env, key);
-    if (!cooledDown) {
-      keyRotationIndex[providerId] = (idx + 1) % keys.length;
-      return key;
+  for (let i = 0; i < entries.length; i++) {
+    const idx = (keyRotationIndex[providerId] + i) % entries.length;
+    if (!await isKeyCooledDown(env, entries[idx].apiKey)) {
+      keyRotationIndex[providerId] = (idx + 1) % entries.length;
+      return entries[idx];
     }
   }
-  // Todas as chaves em cooldown — retorna a primeira mesmo assim para evitar falha total
   console.warn("[VeroRoute KeyPool] Todas as chaves do provedor " + providerId + " estão em cooldown. Usando a primeira.");
-  return keys[0];
+  return entries[0];
 }
 
-/**
- * FIX 5: Marca uma chave API como em rate-limit com TTL tanto no cache local
- * quanto no Cloudflare KV, para sincronização global entre isolates.
- *
- * @param env         Bindings do Cloudflare Workers (contém OMNI_CACHE)
- * @param apiKey      A chave que recebeu HTTP 429
- * @param cooldownSec Segundos de cooldown (padrão: 60)
- */
-export async function markKeyRateLimited(
-  env: EnvBindings,
-  apiKey: string,
-  cooldownSec = 60
-): Promise<void> {
+export async function selectActiveKey(env: EnvBindings, providerId: string): Promise<string> {
+  return (await selectActiveCredential(env, providerId)).apiKey;
+}
+
+export async function markKeyRateLimited(env: EnvBindings, apiKey: string, cooldownSec = 60): Promise<void> {
   const expiryMs = Date.now() + cooldownSec * 1000;
-  // Cache local imediato
   keyCooldowns.set(apiKey, expiryMs);
-  // Persiste no KV com TTL para compartilhar entre todos os isolates
-  if (env.OMNI_CACHE) {
-    await env.OMNI_CACHE.put(
-      KV_COOLDOWN_PREFIX + apiKey,
-      String(expiryMs),
-      { expirationTtl: cooldownSec + 10 } // +10s de margem de segurança
-    );
-  }
+  if (env.OMNI_CACHE) await env.OMNI_CACHE.put(KV_COOLDOWN_PREFIX + apiKey, String(expiryMs), { expirationTtl: cooldownSec + 10 });
 }
-
