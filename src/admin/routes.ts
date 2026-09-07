@@ -8,6 +8,7 @@ import {
   appendProviderKeys,
   removeProviderKeys,
   getCustomProviderKeys,
+  setCustomProviderKeys,
   type CustomProvider,
   type ComboConfig,
 } from "./store";
@@ -18,6 +19,7 @@ import { getAntigravityOAuthCredentials } from "./store";
 import type { EnvBindings } from "@/types/provider";
 import { getUsageSummary } from "@/routing/costTracker";
 import { getCircuitStatus } from "@/routing/circuitBreaker";
+import { DEFAULT_MODELS_CATALOG } from "@/config/constants";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const adminRouter = new Hono<{ Bindings: EnvBindings; Variables: any }>();
@@ -151,32 +153,156 @@ adminRouter.post("/providers/:id/keys", async (c) => {
   const body = (await c.req.json()) as { keys: string[] };
   const newKeys = (body.keys || []).map((k) => k.trim()).filter(Boolean);
   const merged = await appendProviderKeys(c.env, id, newKeys);
-  return c.json({ ok: true, id, keyCount: merged.length }); // C-2: no key values
+  return c.json({
+    ok: true,
+    id,
+    keyCount: merged.length,
+    count: merged.length,
+    keys: merged.map(maskSecret),
+  });
 });
 
 adminRouter.delete("/providers/:id/keys", async (c) => {
   const id = c.req.param("id");
-  const body = (await c.req.json()) as { keys: string[] };
-  const remaining = await removeProviderKeys(c.env, id, body.keys || []);
-  return c.json({ ok: true, id, keyCount: remaining.length });
+  const body = (await c.req.json().catch(() => ({}))) as { keys?: string[] };
+  let remaining: string[];
+  if (!body.keys || body.keys.length === 0) {
+    // Limpar todas as chaves deste provedor
+    await setCustomProviderKeys(c.env, id, []);
+    remaining = [];
+  } else {
+    remaining = await removeProviderKeys(c.env, id, body.keys);
+  }
+  return c.json({
+    ok: true,
+    id,
+    keyCount: remaining.length,
+    count: remaining.length,
+    keys: remaining.map(maskSecret),
+  });
 });
 
 adminRouter.post("/providers/:id/models", async (c) => {
   const id = c.req.param("id");
-  const body = (await c.req.json()) as { model: string };
-  const model = body.model?.trim();
-  if (!model) return c.json({ error: { message: "Nome do modelo é obrigatório", type: "validation" } }, 400);
+  const body = (await c.req.json()) as { model?: string; models?: string[] };
+  const modelsToAdd = (body.models && Array.isArray(body.models) ? body.models : [body.model])
+    .map((m) => m?.trim())
+    .filter((m): m is string => Boolean(m));
+  if (modelsToAdd.length === 0) {
+    return c.json({ error: { message: "Nome do modelo é obrigatório", type: "validation" } }, 400);
+  }
   const cfg = await mutateAdminConfig(c.env, (cfg) => {
     if (cfg.customProviders[id]) {
       const list = cfg.customProviders[id].models;
-      if (!list.includes(model)) list.push(model);
+      for (const model of modelsToAdd) {
+        if (!list.includes(model)) list.push(model);
+      }
     } else {
-      cfg.customModels[id] = Array.from(new Set([...(cfg.customModels[id] || []), model]));
+      cfg.customModels[id] = Array.from(new Set([...(cfg.customModels[id] || []), ...modelsToAdd]));
     }
-    const mk = id + "/" + model;
-    if (cfg.modelStates[mk]) delete cfg.modelStates[mk];
+    for (const model of modelsToAdd) {
+      const mk = id + "/" + model;
+      if (cfg.modelStates[mk]) delete cfg.modelStates[mk];
+    }
   });
-  return c.json({ ok: true, id, model, customModels: cfg.customModels, customProviders: cfg.customProviders });
+  return c.json({
+    ok: true,
+    id,
+    models: modelsToAdd,
+    customModels: cfg.customModels,
+    customProviders: cfg.customProviders,
+  });
+});
+
+adminRouter.post("/providers/:id/fetch-models", async (c) => {
+  const id = c.req.param("id");
+  const body = (await c.req.json().catch(() => ({}))) as { apiKey?: string };
+  const cfg = await getAdminConfig(c.env);
+  const prov = cfg.customProviders[id] || PROVIDER_REGISTRY[id];
+  const preset = FREE_PROVIDER_PRESETS.find((p) => p.id === id);
+
+  // 1. Obter chave de API (do body, do KV ou do keyPool)
+  let apiKey = body.apiKey?.trim();
+  if (!apiKey) {
+    const customKeys = await getCustomProviderKeys(c.env, id);
+    apiKey = customKeys[0];
+    if (!apiKey) {
+      apiKey = await selectActiveKey(c.env, id);
+    }
+  }
+
+  const baseUrl = prov?.baseUrl || preset?.baseUrl || "";
+  const authType = (prov && "authType" in prov ? prov.authType : undefined) || "bearer";
+  const headerName: string = (prov && "headerName" in prov && typeof (prov as any).headerName === "string" ? (prov as any).headerName : "api-key");
+
+  let upstreamModels: string[] = [];
+  let fetchError: string | null = null;
+
+  // Se tiver baseUrl e apiKey, tenta consultar a API do provedor
+  if (baseUrl && baseUrl !== "workers-ai" && !baseUrl.includes("cloudcode-pa.googleapis.com")) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+      let url = baseUrl.replace(/\/+$/, "") + "/models";
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+      };
+
+      if (id === "gemini") {
+        url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+      } else if (authType === "apikey-header") {
+        headers[headerName] = apiKey || "";
+      } else if (apiKey) {
+        headers["Authorization"] = `Bearer ${apiKey}`;
+      }
+
+      const res = await fetch(url, { headers, signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const json = (await res.json()) as any;
+        const list = Array.isArray(json.data) ? json.data : (Array.isArray(json.models) ? json.models : []);
+        upstreamModels = list
+          .map((m: any) => (typeof m === "string" ? m : (m.id || m.name)))
+          .filter((m: any): m is string => Boolean(m))
+          .map((m: string) => m.replace(/^models\//, ""));
+      } else {
+        fetchError = `Upstream HTTP ${res.status}`;
+      }
+    } catch (err: any) {
+      fetchError = err.name === "AbortError" ? "Timeout ao consultar upstream (6s)" : (err.message || String(err));
+    }
+  }
+
+  // 2. Combinar com catálogo conhecido do provedor
+  const registryModels = prov?.models || [];
+  const presetModels = preset?.models || [];
+  const recommendedModels = preset?.recommendedModels || [];
+  const defaultCatModels = DEFAULT_MODELS_CATALOG.filter((m) => m.provider === id).map((m) => m.id);
+  const activeCustomModels = cfg.customModels[id] || [];
+
+  // Combina sem duplicatas
+  const allAvailable = Array.from(
+    new Set([
+      ...upstreamModels,
+      ...recommendedModels,
+      ...registryModels,
+      ...presetModels,
+      ...defaultCatModels,
+      ...activeCustomModels,
+    ])
+  );
+
+  return c.json({
+    ok: true,
+    id,
+    models: allAvailable,
+    upstreamCount: upstreamModels.length,
+    hasUpstream: upstreamModels.length > 0,
+    fetchError,
+    activeModels: prov?.models || activeCustomModels,
+  });
 });
 
 adminRouter.delete("/providers/:id/models", async (c) => {

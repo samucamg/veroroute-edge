@@ -189,6 +189,9 @@ O gateway possui uma interface visual integrada acessível diretamente no navega
 | `/api/admin/circuits` | GET | Bearer Mestre (`AUTH_TOKEN`) | Leitura do estado dos Circuit Breakers |
 | `/api/admin/usage/:keyId` | GET | Bearer Mestre (`AUTH_TOKEN`) | Leitura do consumo e custo de uma chave |
 | `/api/admin/presets` | GET | Bearer Mestre (`AUTH_TOKEN`) | Presets de provedores gratuitos |
+| `/api/admin/providers/:id/keys` | POST/DELETE | Bearer Mestre (`AUTH_TOKEN`) | Adição ao pool e limpeza de chaves de API |
+| `/api/admin/providers/:id/models` | POST/DELETE | Bearer Mestre (`AUTH_TOKEN`) | Adição em lote e remoção de modelos do provedor |
+| `/api/admin/providers/:id/fetch-models` | POST | Bearer Mestre (`AUTH_TOKEN`) | Descoberta dinâmica de modelos via API upstream e catálogo |
 | `/api/oauth/antigravity/*` | GET/POST | Bearer Mestre (`AUTH_TOKEN`) | Fluxo de autenticação OAuth para Google Code Assist |
 
 ---

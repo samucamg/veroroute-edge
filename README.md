@@ -188,6 +188,29 @@ npx wrangler deploy
 
 ---
 
+## 🔐 Configuração do Google OAuth (Antigravity CLI / Code Assist)
+
+O VeroRoute Edge integra-se com os modelos Gemini 2.5 Pro e Claude 3.7 Sonnet através dos endpoints oficiais do Google Cloud Code Assist.
+
+Existem **duas formas** de autenticar:
+
+### Método 1: Importação Direta de Tokens (Recomendado — Sem Google Cloud Console)
+Se você já utiliza o Antigravity CLI ou Gemini Code Assist no seu terminal ou IDE, você não precisa criar credenciais no Google Cloud:
+1. Abra o painel administrativo (`/` com seu `AUTH_TOKEN`) e acesse a aba **Antigravity OAuth**.
+2. No campo **Importação Manual de Tokens**, cole o conteúdo do seu arquivo local `~/.config/antigravity/tokens.json` (ou seu `refresh_token`).
+3. Clique em **Salvar Tokens no Worker**. O VeroRoute Edge armazenará o token com segurança no Cloudflare KV (`OMNI_KEYS`) e cuidará da renovação automática de acesso.
+
+### Método 2: Fluxo Web com Botão "Autorizar com Google"
+Por requisitos de segurança do Google Identity, cada aplicativo web deve registrar expressamente suas URLs de redirecionamento autorizadas. Como cada implantação do Cloudflare Workers possui um subdomínio próprio (`https://<seu-worker>.workers.dev`), é necessário criar um Client ID gratuito no console Google Cloud:
+1. No painel administrativo do VeroRoute Edge (aba Antigravity OAuth), clique em **📋 Copiar URI** para copiar a URL de redirecionamento do seu worker (ex: `https://<seu-worker>.workers.dev/api/oauth/antigravity/callback`).
+2. Acesse o [Google Cloud Console → Credenciais](https://console.cloud.google.com/apis/credentials).
+3. Clique em **+ Criar Credenciais** → **ID do cliente OAuth** → Tipo: **Aplicativo da Web**.
+4. Em **URIs de redirecionamento autorizados**, cole a URL copiada no passo 1 e salve.
+5. Copie o **Client ID** e **Client Secret** gerados e cole nos campos correspondentes na aba Antigravity OAuth do painel.
+6. Clique em **Salvar Credenciais no KV** e, em seguida, clique no botão **🔗 Autorizar com Google** para concluir o login.
+
+---
+
 ## 📄 Licença
 
 Este projeto é distribuído sob a licença **MIT**. Veja [LICENSE](LICENSE) para mais detalhes.

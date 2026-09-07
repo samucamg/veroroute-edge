@@ -187,6 +187,69 @@ export function renderDashboardHtml(): string {
       color: var(--rose);
       border: 1px solid rgba(244, 63, 94, 0.3);
     }
+    .toast-container {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      z-index: 99999;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      pointer-events: none;
+    }
+    .toast {
+      background: #1e293b;
+      color: #f8fafc;
+      padding: 0.75rem 1.25rem;
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+      font-size: 0.85rem;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.25s ease;
+      pointer-events: auto;
+      max-width: 400px;
+    }
+    .toast.active { opacity: 1; transform: translateY(0); }
+    .toast-success { border-color: rgba(16, 185, 129, 0.5); background: #064e3b; color: #a7f3d0; }
+    .toast-error { border-color: rgba(244, 63, 94, 0.5); background: #881337; color: #fecdd3; }
+    .toast-info { border-color: rgba(56, 189, 248, 0.5); background: #0c4a6e; color: #bae6fd; }
+    .model-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      color: var(--primary);
+      padding: 0.2rem 0.55rem;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-family: monospace;
+    }
+    .model-tag .remove-btn {
+      color: var(--rose);
+      cursor: pointer;
+      font-weight: bold;
+      padding: 0 0.2rem;
+      border-radius: 3px;
+    }
+    .model-tag .remove-btn:hover {
+      background: rgba(244, 63, 94, 0.2);
+    }
+    .model-select-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.4rem 0.6rem;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      font-size: 0.8rem;
+    }
+    .model-select-item:hover {
+      background: rgba(255,255,255,0.05);
+    }
 
     main {
       flex: 1;
@@ -649,6 +712,41 @@ curl -X POST https://seu-worker.workers.dev/v1/search \\
           </div>
         </div>
 
+        <!-- Redirect URI Box -->
+        <div style="background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 12px; padding: 1.1rem; margin-bottom: 1.5rem;">
+          <div style="font-weight: 600; font-size: 0.88rem; color: var(--emerald); margin-bottom: 0.35rem;">
+            🌐 Authorized Redirect URI do seu Worker (Necessário no Google Cloud)
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+            <input type="text" id="agy-redirect-uri" readonly style="flex: 1; font-family: monospace; font-size: 0.8rem; background: rgba(0,0,0,0.3); color: #fff;" />
+            <button class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.45rem 0.85rem;" onclick="copyRedirectUri()">📋 Copiar URI</button>
+          </div>
+          <p style="color: var(--text-muted); font-size: 0.78rem; line-height: 1.4; margin: 0;">
+            O Google OAuth exige que a URL do seu Worker esteja explicitamente registrada na lista de <em>URIs de redirecionamento autorizados</em> no Google Cloud Console. Por esse motivo de segurança do Google, cada implantação deve registrar a sua URL exclusiva.
+          </p>
+        </div>
+
+        <!-- Passo a Passo Google Cloud Console Guide -->
+        <details style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--card-border); border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem;">
+          <summary style="cursor: pointer; font-weight: 600; font-size: 0.88rem; color: var(--primary);">
+            📖 Como criar seu Google OAuth Client ID gratuito (Guia Passo a Passo)
+          </summary>
+          <div style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; margin-top: 0.75rem;">
+            <ol style="padding-left: 1.25rem; margin-bottom: 0.5rem;">
+              <li>Acesse o <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color: var(--primary); text-decoration: underline;">Google Cloud Console → Credenciais</a> com sua conta Google.</li>
+              <li>Clique em <strong>+ Criar Credenciais</strong> e selecione <strong>ID do cliente OAuth</strong>.</li>
+              <li>Se solicitado, configure a tela de consentimento como "Externo" (basta preencher o nome do app e seu e-mail).</li>
+              <li>Em <em>Tipo de aplicativo</em>, escolha <strong>Aplicativo da Web</strong>.</li>
+              <li>Em <strong>URIs de redirecionamento autorizados</strong>, clique em <em>+ Adicionar URI</em> e cole o <strong>Authorized Redirect URI</strong> copiado acima.</li>
+              <li>Clique em <strong>Criar</strong>. O Google exibirá seu <strong>Client ID</strong> e <strong>Client Secret</strong>.</li>
+              <li>Cole os dois valores no formulário abaixo e clique em <strong>Salvar Credenciais no KV</strong>.</li>
+            </ol>
+            <div style="background: rgba(245, 158, 11, 0.08); border-left: 3px solid var(--amber); padding: 0.5rem 0.75rem; border-radius: 4px; font-size: 0.78rem; margin-top: 0.5rem;">
+              ⚡ <strong>Alternativa rápida sem criar nada no Google Cloud:</strong> Se você já tem o Antigravity CLI ou Gemini Code Assist logado no terminal, pule esta etapa e use a seção de <em>Importação Manual de Tokens</em> abaixo!
+            </div>
+          </div>
+        </details>
+
         <!-- Credenciais OAuth Setup Form -->
         <div style="background: rgba(56, 189, 248, 0.03); border: 1px solid rgba(56, 189, 248, 0.15); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.75rem;">
           <h4 style="font-size: 0.95rem; margin-bottom: 0.5rem; color: var(--primary);">⚙️ Configuração das Credenciais do Google OAuth</h4>
@@ -867,8 +965,10 @@ dsh --model combo-super-payload
             <label style="font-size:0.85rem; color: var(--text-muted);">Tool Calling?</label><input type="checkbox" id="acp-tools" checked>
             <label style="font-size:0.85rem; color: var(--text-muted);">Visão?</label><input type="checkbox" id="acp-vision">
           </div>
+        <div style="display:flex; gap:0.75rem; margin-top:1.25rem;">
+          <button class="btn" onclick="addCustomProvider()">+ Adicionar Provedor</button>
+          <button class="btn btn-secondary" onclick="clearCustomProviderForm()">Limpar Formulário</button>
         </div>
-        <button class="btn" style="margin-top:1.25rem;" onclick="addCustomProvider()">Adicionar Provedor</button>
       </div>
 
       <div class="card">
@@ -1030,6 +1130,128 @@ dsh --model combo-super-payload
     </div>
   </div>
 
+  <!-- MODAL: GERENCIAR CHAVES DO PROVEDOR -->
+  <div id="modal-provider-keys" class="modal-overlay">
+    <div class="modal-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <h3 id="mpk-title" style="margin: 0; font-size: 1.15rem; color: #fff;">🔑 Chaves de API do Provedor</h3>
+        <button type="button" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.85rem;" onclick="closeProviderKeysModal()">✕</button>
+      </div>
+
+      <div id="mpk-status-box" style="padding: 0.75rem 1rem; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 8px; margin-bottom: 1rem; font-size: 0.85rem;">
+        Carregando informações do pool...
+      </div>
+
+      <div style="margin-bottom: 1rem;">
+        <label style="display: block; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.35rem;">
+          Adicionar Chave(s) ao Pool de Balanceamento:
+        </label>
+        <textarea id="mpk-new-key" rows="3" placeholder="Cole uma ou mais chaves (separe por vírgula ou uma por linha)" style="width: 100%; font-family: monospace; font-size: 0.82rem;"></textarea>
+        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.3rem;">
+          💡 O VeroRoute Edge rotaciona automaticamente entre todas as chaves adicionadas para evitar rate-limits (HTTP 429).
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.25rem;">
+        <button type="button" class="btn" onclick="saveProviderKeys()">+ Salvar Chave(s)</button>
+        <button type="button" class="btn btn-secondary" style="color: var(--rose);" onclick="clearProviderKeys()">Limpar Pool de Chaves</button>
+      </div>
+
+      <div style="border-top: 1px solid var(--card-border); padding-top: 1rem; display: flex; justify-content: space-between; align-items: center;">
+        <button type="button" class="btn btn-secondary" style="font-size: 0.8rem;" onclick="openProviderModelsModalFromKeys()">
+          🤖 Configurar Modelos deste Provedor →
+        </button>
+        <button type="button" class="btn btn-secondary" onclick="closeProviderKeysModal()">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: GERENCIAR MODELOS DO PROVEDOR -->
+  <div id="modal-provider-models" class="modal-overlay">
+    <div class="modal-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <h3 id="mpm-title" style="margin: 0; font-size: 1.15rem; color: #fff;">🤖 Modelos do Provedor</h3>
+        <button type="button" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.85rem;" onclick="closeProviderModelsModal()">✕</button>
+      </div>
+
+      <!-- Modelos Atualmente Ativos -->
+      <div style="margin-bottom: 1.25rem;">
+        <label style="display: block; font-size: 0.82rem; font-weight: 600; color: #fff; margin-bottom: 0.5rem;">
+          Modelos Ativos / Habilitados:
+        </label>
+        <div id="mpm-active-list" style="display: flex; flex-wrap: wrap; gap: 0.4rem; max-height: 120px; overflow-y: auto; padding: 0.5rem; background: rgba(255,255,255,0.02); border: 1px solid var(--card-border); border-radius: 8px;">
+          <!-- Tags dos modelos ativos -->
+        </div>
+      </div>
+
+      <!-- Descoberta Upstream & Catálogo -->
+      <div style="background: rgba(56, 189, 248, 0.03); border: 1px solid rgba(56, 189, 248, 0.15); border-radius: 10px; padding: 1rem; margin-bottom: 1.25rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <span style="font-weight: 600; font-size: 0.85rem; color: var(--primary);">
+            🔍 Buscar Modelos Disponíveis (Upstream & Catálogo)
+          </span>
+          <button type="button" id="mpm-btn-fetch" class="btn btn-secondary" style="padding: 0.3rem 0.75rem; font-size: 0.78rem;" onclick="fetchAvailableModels()">
+            Buscar Modelos
+          </button>
+        </div>
+        <div id="mpm-fetch-status" style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+          Clique em 'Buscar Modelos' para consultar a API oficial do provedor ou catálogo.
+        </div>
+        <div id="mpm-discovered-list" style="max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.6rem;">
+          <!-- Modelos descobertos com checkboxes -->
+        </div>
+        <button type="button" id="mpm-btn-add-selected" class="btn" style="display: none; padding: 0.35rem 0.85rem; font-size: 0.8rem;" onclick="addSelectedDiscoveredModels()">
+          + Adicionar Modelos Selecionados
+        </button>
+      </div>
+
+      <!-- Inclusão Manual de Modelo -->
+      <div style="border-top: 1px solid var(--card-border); padding-top: 1rem; margin-bottom: 1rem;">
+        <label style="display: block; font-size: 0.82rem; font-weight: 600; color: #fff; margin-bottom: 0.4rem;">
+          ✏️ Adicionar Modelo Manualmente:
+        </label>
+        <div style="display: flex; gap: 0.5rem;">
+          <input type="text" id="mpm-manual-name" placeholder="Digite o nome do modelo (ex: llama-3.3-70b-versatile, qwen-max)" style="flex: 1; font-size: 0.82rem;" onkeydown="if(event.key==='Enter') addManualModel()" />
+          <button type="button" class="btn btn-secondary" style="padding: 0.4rem 0.85rem; font-size: 0.82rem;" onclick="addManualModel()">
+            + Adicionar
+          </button>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; border-top: 1px solid var(--card-border); padding-top: 0.75rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeProviderModelsModal()">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ADICIONAR MODELO AO COMBO RAPIDAMENTE -->
+  <div id="modal-quick-combo-model" class="modal-overlay">
+    <div class="modal-card" style="max-width: 480px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <h3 id="mqc-title" style="margin: 0; font-size: 1.15rem; color: #fff;">Adicionar Modelo ao Combo</h3>
+        <button type="button" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.85rem;" onclick="closeQuickComboModelModal()">✕</button>
+      </div>
+
+      <div style="margin-bottom: 1rem;">
+        <label style="display: block; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.35rem;">Selecione o Provedor:</label>
+        <select id="mqc-provider" style="width: 100%; font-size: 0.85rem;" onchange="onQuickComboProviderChange()">
+          <!-- Preenchido via JS -->
+        </select>
+      </div>
+
+      <div style="margin-bottom: 1.25rem;">
+        <label style="display: block; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.35rem;">Nome do Modelo:</label>
+        <input type="text" id="mqc-model" placeholder="ex: gemini-2.5-flash, llama-3.3-70b-versatile" style="width: 100%; font-size: 0.85rem;" list="mqc-model-suggestions" />
+        <datalist id="mqc-model-suggestions"></datalist>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; border-top: 1px solid var(--card-border); padding-top: 1rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeQuickComboModelModal()">Cancelar</button>
+        <button type="button" class="btn" onclick="saveQuickComboModel()">+ Adicionar ao Combo</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     function showTab(tabId) {
       document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
@@ -1042,6 +1264,35 @@ dsh --model combo-super-payload
       if (tabId === 'combos') loadCombos();
       else if (tabId === 'antigravity') loadAntigravityStatus();
       else if (tabId === 'admin') loadAdmin();
+    }
+
+    function showToast(msg, type) {
+      type = type || 'info';
+      let container = document.getElementById('toast-container');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'toast-container';
+        document.body.appendChild(container);
+      }
+      const t = document.createElement('div');
+      t.className = 'toast toast-' + type;
+      t.innerText = msg;
+      container.appendChild(t);
+      setTimeout(function() { t.classList.add('active'); }, 10);
+      setTimeout(function() {
+        t.classList.remove('active');
+        setTimeout(function() { t.remove(); }, 300);
+      }, 4500);
+    }
+
+    function copyRedirectUri() {
+      const uri = window.location.origin + '/api/oauth/antigravity/callback';
+      navigator.clipboard.writeText(uri).then(function() {
+        showToast('Authorized Redirect URI copiada para a área de transferência!', 'success');
+      }).catch(function() {
+        showToast('URL de redirecionamento: ' + uri, 'info');
+      });
     }
 
     function getAdminToken() { return sessionStorage.getItem('vr_admin_token') || ''; }
@@ -1179,8 +1430,9 @@ dsh --model combo-super-payload
           return;
         }
         const data = await res.json();
-        renderAdminProviders(data.providers || []);
-        if (statusEl) statusEl.innerText = data.providers.length + ' provedores carregados';
+        window._providersData = data.providers || [];
+        renderAdminProviders(window._providersData);
+        if (statusEl) statusEl.innerText = window._providersData.length + ' provedores carregados';
       } catch (e) {
         if (statusEl) statusEl.innerText = 'Erro: ' + e.message;
       }
@@ -1196,19 +1448,21 @@ dsh --model combo-super-payload
       providers.forEach(function(p) {
         const box = document.createElement('div');
         box.className = 'provider-box';
+        const keyCount = p.keyCount !== undefined ? p.keyCount : (p.keys ? p.keys.length : 0);
+        const modelCount = p.models ? p.models.length : 0;
         box.innerHTML =
           '<div class="provider-header">' +
             '<span class="provider-name">' + escapeHtml(p.name) + '</span>' +
             '<span class="status-dot" style="background:' + (p.enabled ? 'var(--emerald)' : 'var(--rose)') + ';box-shadow:0 0 8px ' + (p.enabled ? 'var(--emerald)' : 'var(--rose)') + '"></span>' +
           '</div>' +
           '<span style="font-size:0.78rem; color: var(--text-muted);">' + (p.isBuiltIn ? 'Embutido' : 'Customizado') + ' · ' + (p.protocol || 'openai') + '</span>' +
-          '<span style="font-size:0.75rem; color: var(--primary); word-break:break-all;">Modelos: ' + (p.models || []).join(', ') + '</span>' +
-          '<span style="font-size:0.75rem; color: var(--text-muted);">Chaves: ' + (p.keys ? p.keys.length : 0) + '</span>' +
+          '<span style="font-size:0.75rem; color: var(--primary); word-break:break-all;">Modelos (' + modelCount + '): ' + (p.models || []).slice(0, 3).join(', ') + (modelCount > 3 ? '...' : '') + '</span>' +
+          '<span style="font-size:0.75rem; color: var(--text-muted);">Chaves no Pool: <strong>' + keyCount + '</strong></span>' +
           '<div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-top:0.5rem;">' +
             '<button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem;" onclick="toggleProvider(&apos;' + escapeHtml(p.id) + '&apos;,' + (p.enabled ? 'false' : 'true') + ')">' + (p.enabled ? 'Desativar' : 'Ativar') + '</button>' +
-            '<button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem;" onclick="addKey(&apos;' + escapeHtml(p.id) + '&apos;)">+ Chave</button>' +
-            '<button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem;" onclick="addModel(&apos;' + escapeHtml(p.id) + '&apos;)">+ Modelo</button>' +
-            (!p.isBuiltIn ? '<button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem; background:rgba(244,63,94,0.15);" onclick="deleteCustomProvider(&apos;' + escapeHtml(p.id) + '&apos;)">Excluir</button>' : '') +
+            '<button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem;" onclick="openProviderKeysModal(&apos;' + escapeHtml(p.id) + '&apos;)">🔑 Chaves (' + keyCount + ')</button>' +
+            '<button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem;" onclick="openProviderModelsModal(&apos;' + escapeHtml(p.id) + '&apos;)">🤖 Modelos (' + modelCount + ')</button>' +
+            (!p.isBuiltIn ? '<button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem; background:rgba(244,63,94,0.15); color:var(--rose);" onclick="deleteCustomProvider(&apos;' + escapeHtml(p.id) + '&apos;)">Excluir</button>' : '') +
           '</div>';
         grid.appendChild(box);
       });
@@ -1223,61 +1477,294 @@ dsh --model combo-super-payload
         });
         const data = await res.json();
         loadAdmin();
-        alert(data.ok ? 'Provedor atualizado!' : 'Erro: ' + JSON.stringify(data.error || data));
-      } catch (e) { alert('Erro: ' + e.message); }
+        showToast(data.ok ? 'Provedor atualizado!' : 'Erro: ' + JSON.stringify(data.error || data), data.ok ? 'success' : 'error');
+      } catch (e) { showToast('Erro: ' + e.message, 'error'); }
     }
 
-    async function addKey(id) {
-      const key = prompt('Digite a chave de API a adicionar (para pool de balanceamento):');
-      if (!key) return;
+    // Gerenciador de Chaves de API
+    let activeModalProviderId = null;
+
+    function openProviderKeysModal(providerId) {
+      activeModalProviderId = providerId;
+      const p = (window._providersData || []).find(function(x) { return x.id === providerId; });
+      const provName = p ? p.name : providerId;
+      document.getElementById('mpk-title').innerText = '🔑 Chaves de API: ' + provName;
+
+      const count = p ? (p.keyCount !== undefined ? p.keyCount : (p.keys ? p.keys.length : 0)) : 0;
+      const box = document.getElementById('mpk-status-box');
+      box.innerHTML = '<strong>Provedor:</strong> ' + escapeHtml(provName) + ' (' + escapeHtml(p ? p.protocol || 'openai' : '') + ')<br>' +
+        '<strong>Status do Pool:</strong> ' + (count > 0 ? '<span style="color:var(--emerald); font-weight:600;">' + count + ' chave(s) ativa(s) no balanceamento</span>' : '<span style="color:var(--amber);">Nenhuma chave cadastrada neste Worker</span>');
+
+      document.getElementById('mpk-new-key').value = '';
+      document.getElementById('modal-provider-keys').classList.add('active');
+    }
+
+    function closeProviderKeysModal() {
+      document.getElementById('modal-provider-keys').classList.remove('active');
+    }
+
+    async function saveProviderKeys() {
+      if (!activeModalProviderId) return;
+      const val = document.getElementById('mpk-new-key').value.trim();
+      if (!val) {
+        showToast('Insira ao menos uma chave de API para salvar.', 'error');
+        return;
+      }
+      const keys = val.split(/[\n,]+/).map(function(s) { return s.trim(); }).filter(Boolean);
       try {
-        const res = await adminFetch('/api/admin/providers/' + id + '/keys', {
+        const res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/keys', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keys: [key] })
+          body: JSON.stringify({ keys: keys })
         });
         const data = await res.json();
-        loadAdmin();
-        alert(data.ok ? 'Chave adicionada! Pool atual: ' + data.keys.length : 'Erro: ' + JSON.stringify(data.error || data));
-      } catch (e) { alert('Erro: ' + e.message); }
+        if (data.ok) {
+          const poolCount = data.keyCount !== undefined ? data.keyCount : (data.keys ? data.keys.length : keys.length);
+          showToast('Chave(s) salva(s) com sucesso! Pool atual: ' + poolCount + ' chaves.', 'success');
+          document.getElementById('mpk-new-key').value = '';
+          await loadAdmin();
+          openProviderKeysModal(activeModalProviderId);
+        } else {
+          showToast('Erro ao salvar chaves: ' + JSON.stringify(data.error || data), 'error');
+        }
+      } catch (e) {
+        showToast('Erro: ' + e.message, 'error');
+      }
     }
 
-    async function addModel(id) {
-      const model = prompt('Digite o nome do modelo a adicionar:');
-      if (!model) return;
+    async function clearProviderKeys() {
+      if (!activeModalProviderId) return;
+      if (!confirm('Deseja realmente remover todas as chaves de API cadastradas para este provedor?')) return;
       try {
-        const res = await adminFetch('/api/admin/providers/' + id + '/models', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: model })
-        });
-        const data = await res.json();
-        loadAdmin();
-        alert(data.ok ? 'Modelo adicionado!' : 'Erro: ' + JSON.stringify(data.error || data));
-      } catch (e) { alert('Erro: ' + e.message); }
-    }
-
-    async function removeModel(id, model) {
-      try {
-        const res = await adminFetch('/api/admin/providers/' + id + '/models', {
+        const res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/keys', {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: model })
+          body: JSON.stringify({ keys: [] })
         });
         const data = await res.json();
-        loadAdmin();
-        alert(data.ok ? 'Modelo excluído!' : 'Erro: ' + JSON.stringify(data.error || data));
-      } catch (e) { alert('Erro: ' + e.message); }
+        if (data.ok) {
+          showToast('Pool de chaves limpo com sucesso!', 'info');
+          await loadAdmin();
+          openProviderKeysModal(activeModalProviderId);
+        } else {
+          showToast('Erro ao limpar chaves: ' + JSON.stringify(data.error || data), 'error');
+        }
+      } catch (e) {
+        showToast('Erro: ' + e.message, 'error');
+      }
+    }
+
+    function openProviderModelsModalFromKeys() {
+      const pid = activeModalProviderId;
+      closeProviderKeysModal();
+      if (pid) openProviderModelsModal(pid);
+    }
+
+    // Gerenciador de Modelos
+    function openProviderModelsModal(providerId) {
+      activeModalProviderId = providerId;
+      const p = (window._providersData || []).find(function(x) { return x.id === providerId; });
+      const provName = p ? p.name : providerId;
+      document.getElementById('mpm-title').innerText = '🤖 Modelos: ' + provName;
+
+      renderActiveModelsList();
+
+      document.getElementById('mpm-discovered-list').innerHTML = '';
+      document.getElementById('mpm-btn-add-selected').style.display = 'none';
+      document.getElementById('mpm-fetch-status').innerText = 'Clique em "Buscar Modelos" para consultar a API oficial do provedor ou catálogo.';
+      document.getElementById('mpm-manual-name').value = '';
+
+      document.getElementById('modal-provider-models').classList.add('active');
+    }
+
+    function closeProviderModelsModal() {
+      document.getElementById('modal-provider-models').classList.remove('active');
+    }
+
+    function renderActiveModelsList() {
+      const p = (window._providersData || []).find(function(x) { return x.id === activeModalProviderId; });
+      const container = document.getElementById('mpm-active-list');
+      if (!container) return;
+      container.innerHTML = '';
+      const models = (p && p.models) ? p.models : [];
+      if (models.length === 0) {
+        container.innerHTML = '<span style="color:var(--text-muted); font-size:0.8rem;">Nenhum modelo cadastrado. Adicione abaixo!</span>';
+        return;
+      }
+      models.forEach(function(m) {
+        const tag = document.createElement('span');
+        tag.className = 'model-tag';
+        tag.innerHTML = escapeHtml(m) + '<span class="remove-btn" title="Remover modelo" onclick="removeModelFromActiveProvider(&apos;' + escapeHtml(m) + '&apos;)">✕</span>';
+        container.appendChild(tag);
+      });
+    }
+
+    async function fetchAvailableModels() {
+      if (!activeModalProviderId) return;
+      const btn = document.getElementById('mpm-btn-fetch');
+      const status = document.getElementById('mpm-fetch-status');
+      const listContainer = document.getElementById('mpm-discovered-list');
+      const addSelectedBtn = document.getElementById('mpm-btn-add-selected');
+
+      btn.disabled = true;
+      btn.innerText = 'Buscando...';
+      status.innerText = 'Consultando API e catálogo de modelos...';
+      listContainer.innerHTML = '';
+      addSelectedBtn.style.display = 'none';
+
+      try {
+        const res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/fetch-models', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        const data = await res.json();
+        btn.disabled = false;
+        btn.innerText = 'Buscar Modelos';
+
+        if (data.ok && data.models && data.models.length > 0) {
+          const p = (window._providersData || []).find(function(x) { return x.id === activeModalProviderId; });
+          const activeSet = new Set((p && p.models) ? p.models : []);
+
+          status.innerHTML = (data.hasUpstream
+            ? '<span style="color:var(--emerald); font-weight:600;">✓ ' + data.upstreamCount + ' modelos retornados pela API oficial do provedor!</span>'
+            : '<span style="color:var(--amber);">Modelos do catálogo de referência (Upstream não respondeu ou sem chave).</span>');
+
+          data.models.forEach(function(m) {
+            const isAlreadyActive = activeSet.has(m);
+            const item = document.createElement('div');
+            item.className = 'model-select-item';
+            item.innerHTML =
+              '<div style="display:flex; align-items:center; gap:0.5rem;">' +
+                '<input type="checkbox" class="disc-model-cb" value="' + escapeHtml(m) + '" ' + (isAlreadyActive ? 'checked disabled' : '') + ' style="cursor:pointer;" />' +
+                '<span style="font-family:monospace; font-size:0.8rem;">' + escapeHtml(m) + '</span>' +
+              '</div>' +
+              (isAlreadyActive ? '<span style="font-size:0.72rem; color:var(--emerald); font-weight:600;">ativo</span>' : '<button class="btn btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.7rem;" onclick="quickAddSingleModel(&apos;' + escapeHtml(m) + '&apos;)">+ Adicionar</button>');
+            listContainer.appendChild(item);
+          });
+
+          addSelectedBtn.style.display = 'inline-block';
+        } else {
+          status.innerText = 'Nenhum modelo novo encontrado. ' + (data.fetchError ? 'Nota: ' + data.fetchError : '');
+        }
+      } catch (e) {
+        btn.disabled = false;
+        btn.innerText = 'Buscar Modelos';
+        status.innerText = 'Erro ao buscar modelos: ' + e.message;
+      }
+    }
+
+    async function quickAddSingleModel(modelName) {
+      if (!activeModalProviderId || !modelName) return;
+      try {
+        const res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/models', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: modelName })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('Modelo "' + modelName + '" adicionado com sucesso!', 'success');
+          await loadAdmin();
+          renderActiveModelsList();
+          fetchAvailableModels();
+        } else {
+          showToast('Erro: ' + JSON.stringify(data.error || data), 'error');
+        }
+      } catch (e) {
+        showToast('Erro: ' + e.message, 'error');
+      }
+    }
+
+    async function addSelectedDiscoveredModels() {
+      if (!activeModalProviderId) return;
+      const checkboxes = document.querySelectorAll('.disc-model-cb:checked:not(:disabled)');
+      const selected = [];
+      checkboxes.forEach(function(cb) { selected.push(cb.value); });
+
+      if (selected.length === 0) {
+        showToast('Selecione ao menos um modelo novo para adicionar.', 'info');
+        return;
+      }
+
+      try {
+        const res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/models', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ models: selected })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast(selected.length + ' modelo(s) adicionado(s) com sucesso!', 'success');
+          await loadAdmin();
+          renderActiveModelsList();
+          fetchAvailableModels();
+        } else {
+          showToast('Erro ao adicionar modelos: ' + JSON.stringify(data.error || data), 'error');
+        }
+      } catch (e) {
+        showToast('Erro: ' + e.message, 'error');
+      }
+    }
+
+    async function addManualModel() {
+      if (!activeModalProviderId) return;
+      const input = document.getElementById('mpm-manual-name');
+      const name = input.value.trim();
+      if (!name) {
+        showToast('Digite o nome do modelo a adicionar.', 'error');
+        return;
+      }
+      try {
+        const res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/models', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: name })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('Modelo "' + name + '" adicionado com sucesso!', 'success');
+          input.value = '';
+          await loadAdmin();
+          renderActiveModelsList();
+        } else {
+          showToast('Erro: ' + JSON.stringify(data.error || data), 'error');
+        }
+      } catch (e) {
+        showToast('Erro: ' + e.message, 'error');
+      }
+    }
+
+    async function removeModelFromActiveProvider(modelName) {
+      if (!activeModalProviderId || !modelName) return;
+      if (!confirm('Remover o modelo "' + modelName + '" deste provedor?')) return;
+      try {
+        const res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/models', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: modelName })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('Modelo removido com sucesso!', 'info');
+          await loadAdmin();
+          renderActiveModelsList();
+        } else {
+          showToast('Erro: ' + JSON.stringify(data.error || data), 'error');
+        }
+      } catch (e) {
+        showToast('Erro: ' + e.message, 'error');
+      }
     }
 
     async function deleteCustomProvider(id) {
-      if (!confirm('Excluir o provedor customizado?')) return;
+      if (!confirm('Excluir o provedor customizado permanentemente?')) return;
       try {
         const res = await adminFetch('/api/admin/providers/' + id, { method: 'DELETE' });
         const data = await res.json();
         loadAdmin();
-        alert(data.ok ? 'Provedor excluído!' : 'Erro: ' + JSON.stringify(data.error || data));
-      } catch (e) { alert('Erro: ' + e.message); }
+        showToast(data.ok ? 'Provedor excluído!' : 'Erro: ' + JSON.stringify(data.error || data), data.ok ? 'info' : 'error');
+      } catch (e) { showToast('Erro: ' + e.message, 'error'); }
     }
 
     async function addCustomProvider() {
@@ -1291,14 +1778,17 @@ dsh --model combo-super-payload
       const supportsTools = document.getElementById('acp-tools').checked;
       const supportsVision = document.getElementById('acp-vision').checked;
 
-      if (!name || !baseUrl) { alert('Preencha nome e Base URL'); return; }
+      if (!name || !baseUrl) {
+        showToast('Preencha ao menos Nome e Base URL do provedor.', 'error');
+        return;
+      }
 
       const body = {
         name: name,
         baseUrl: baseUrl,
         protocol: protocol,
-        apiKeys: keysStr ? keysStr.split(',').map(function(s){return s.trim();}).filter(Boolean) : [],
-        models: modelsStr ? modelsStr.split(',').map(function(s){return s.trim();}).filter(Boolean) : [],
+        apiKeys: keysStr ? keysStr.split(/[\n,]+/).map(function(s){return s.trim();}).filter(Boolean) : [],
+        models: modelsStr ? modelsStr.split(/[\n,]+/).map(function(s){return s.trim();}).filter(Boolean) : [],
         costPerMillionInput: costIn,
         freeTier: freeTier,
         supportsStreaming: true,
@@ -1314,12 +1804,24 @@ dsh --model combo-super-payload
         });
         const data = await res.json();
         if (data.ok) {
-          alert('Provedor adicionado! ID: ' + data.id);
+          showToast('Provedor "' + name + '" adicionado com sucesso!', 'success');
+          document.getElementById('acp-name').value = '';
+          document.getElementById('acp-baseurl').value = '';
+          document.getElementById('acp-keys').value = '';
+          document.getElementById('acp-models').value = '';
           loadAdmin();
         } else {
-          alert('Erro: ' + JSON.stringify(data.error || data));
+          showToast('Erro ao adicionar provedor: ' + JSON.stringify(data.error || data), 'error');
         }
-      } catch (e) { alert('Erro: ' + e.message); }
+      } catch (e) { showToast('Erro: ' + e.message, 'error'); }
+    }
+
+    function clearCustomProviderForm() {
+      document.getElementById('acp-name').value = '';
+      document.getElementById('acp-baseurl').value = '';
+      document.getElementById('acp-keys').value = '';
+      document.getElementById('acp-models').value = '';
+      showToast('Formulário limpo.', 'info');
     }
 
     async function searchAdminModels() {
@@ -1376,8 +1878,10 @@ dsh --model combo-super-payload
       document.getElementById('acp-baseurl').value = p.baseUrl;
       document.getElementById('acp-models').value = (p.recommendedModels || []).join(',');
       document.getElementById('acp-freetier').checked = true;
+      document.getElementById('acp-keys').value = ''; // FIX: limpar chave antiga para não reaproveitar
       document.getElementById('acp-name').scrollIntoView({ behavior: 'smooth' });
       document.getElementById('acp-keys').focus();
+      showToast('Template "' + p.name + '" aplicado! Insira a sua chave de API.', 'info');
     }
 
     async function loadSearchConfig() {
@@ -1524,6 +2028,10 @@ dsh --model combo-super-payload
       const badge = document.getElementById('agy-badge-configured');
       const detail = document.getElementById('agy-detail-text');
       const authBtn = document.getElementById('agy-auth-btn');
+      const redirectInput = document.getElementById('agy-redirect-uri');
+      if (redirectInput) {
+        redirectInput.value = window.location.origin + '/api/oauth/antigravity/callback';
+      }
       if (!badge) return;
       try {
         const res = await adminFetch('/api/admin/antigravity/status');
@@ -1551,7 +2059,7 @@ dsh --model combo-super-payload
     async function saveAntigravityConfig() {
       const clientId = document.getElementById('agy-input-client-id').value.trim();
       const clientSecret = document.getElementById('agy-input-client-secret').value.trim();
-      if (!clientId || !clientSecret) return alert('Por favor, informe tanto o Client ID quanto o Client Secret.');
+      if (!clientId || !clientSecret) return showToast('Por favor, informe tanto o Client ID quanto o Client Secret.', 'error');
 
       try {
         const res = await adminFetch('/api/admin/antigravity/config', {
@@ -1561,14 +2069,16 @@ dsh --model combo-super-payload
         });
         const data = await res.json();
         if (data.ok) {
-          alert('Credenciais salvas com sucesso no KV OMNI_KEYS!');
+          showToast('Credenciais salvas com sucesso no KV OMNI_KEYS!', 'success');
           document.getElementById('agy-input-client-secret').value = '';
           loadAntigravityStatus();
         } else {
-          alert('Erro ao salvar: ' + (data.error ? data.error.message : 'Desconhecido'));
+          showToast('Erro ao salvar: ' + (data.error ? data.error.message : 'Desconhecido'), 'error');
         }
       } catch (e) {
-        alert('Erro: ' + e.message);
+        showToast('Erro: ' + e.message, 'error');
+      }
+    }
       }
     }
 
@@ -1761,20 +2271,80 @@ dsh --model combo-super-payload
       }
     }
 
-    function openQuickAddModelModal(comboId) {
-      const prov = prompt('Informe o provedor (ex: gemini, groq, cerebras, alibaba, antigravity, 1min, cloudflare-ai):');
-      if (!prov) return;
-      const mod = prompt('Informe o nome do modelo (ex: gemini-2.5-flash, llama-3.3-70b-versatile, qwen2.5-coder-32b-instruct):');
-      if (!mod) return;
+    let activeQuickComboId = null;
 
-      adminFetch('/api/admin/combos/' + comboId + '/models', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: prov.trim(), model: mod.trim() })
-      }).then(function(r) { return r.json(); }).then(function(data) {
-        if (data.ok) loadCombos();
-        else alert('Erro: ' + JSON.stringify(data));
-      }).catch(function(e) { alert('Erro: ' + e.message); });
+    function openQuickAddModelModal(comboId) {
+      activeQuickComboId = comboId;
+      document.getElementById('mqc-title').innerText = 'Adicionar Modelo ao Combo: ' + comboId;
+      const select = document.getElementById('mqc-provider');
+      select.innerHTML = '';
+
+      const providers = window._providersData || [];
+      const defaultList = ['gemini', 'groq', 'cerebras', 'alibaba', 'antigravity', '1min', 'cloudflare-ai', 'openrouter', 'pollinations', 'openai', 'azure', 'bedrock'];
+      const allPids = Array.from(new Set([...defaultList, ...providers.map(function(p) { return p.id; })]));
+
+      allPids.forEach(function(pid) {
+        const opt = document.createElement('option');
+        opt.value = pid;
+        const p = providers.find(function(x) { return x.id === pid; });
+        opt.innerText = p ? p.name : pid;
+        select.appendChild(opt);
+      });
+
+      onQuickComboProviderChange();
+      document.getElementById('modal-quick-combo-model').classList.add('active');
+    }
+
+    function closeQuickComboModelModal() {
+      document.getElementById('modal-quick-combo-model').classList.remove('active');
+    }
+
+    function onQuickComboProviderChange() {
+      const pid = document.getElementById('mqc-provider').value;
+      const dl = document.getElementById('mqc-model-suggestions');
+      dl.innerHTML = '';
+      const p = (window._providersData || []).find(function(x) { return x.id === pid; });
+      if (p && p.models) {
+        p.models.forEach(function(m) {
+          const opt = document.createElement('option');
+          opt.value = m;
+          dl.appendChild(opt);
+        });
+        if (p.models.length > 0) {
+          document.getElementById('mqc-model').value = p.models[0];
+        } else {
+          document.getElementById('mqc-model').value = '';
+        }
+      } else {
+        document.getElementById('mqc-model').value = '';
+      }
+    }
+
+    async function saveQuickComboModel() {
+      if (!activeQuickComboId) return;
+      const prov = document.getElementById('mqc-provider').value.trim();
+      const mod = document.getElementById('mqc-model').value.trim();
+      if (!prov || !mod) {
+        showToast('Selecione o provedor e informe o modelo.', 'error');
+        return;
+      }
+      try {
+        const res = await adminFetch('/api/admin/combos/' + activeQuickComboId + '/models', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider: prov, model: mod })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('Modelo ' + prov + '/' + mod + ' adicionado ao combo!', 'success');
+          closeQuickComboModelModal();
+          loadCombos();
+        } else {
+          showToast('Erro: ' + JSON.stringify(data.error || data), 'error');
+        }
+      } catch (e) {
+        showToast('Erro: ' + e.message, 'error');
+      }
     }
 
     async function removeModelFromCombo(comboId, provider, model) {
