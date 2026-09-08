@@ -30,7 +30,6 @@
   "vars": {
     "DEFAULT_ROUTING_STRATEGY": "priority",
     "DEFAULT_OUTPUT_STYLE": "none",
-    "SEARXNG_URL": "",
     "ENABLE_MODALITY_BRIDGE": "true",
     "ENABLE_CONTEXT_COMPRESSION": "true",
     "ENABLE_JINA_READER": "true",

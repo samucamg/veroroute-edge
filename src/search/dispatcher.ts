@@ -75,8 +75,9 @@ export async function dispatchSearch(
     }
   }
 
-  // 5. DuckDuckGo (Fallback universal $0, sem cadastro, sem chave)
-  if (results.length === 0 && (requestedProvider === "auto" || requestedProvider === "duckduckgo")) {
+  // 5. DuckDuckGo: fallback realmente universal, inclusive quando um motor
+  // escolhido não possui URL/chave ou falha. Nenhuma URL de busca é obrigatória.
+  if (results.length === 0) {
     try {
       results = await searchWithDuckDuckGo(req);
       usedProvider = "duckduckgo";

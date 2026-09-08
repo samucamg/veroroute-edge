@@ -1031,8 +1031,8 @@ dsh --model combo-super-payload
             </select>
           </div>
           <div>
-            <label style="font-size:0.85rem; color: var(--text-muted);">SearXNG URL (Self-Hosted):</label>
-            <input type="text" id="adm-search-searx" placeholder="Ex: https://search.br5.com.br">
+            <label style="font-size:0.85rem; color: var(--text-muted);">SearXNG URL (Opcional):</label>
+            <input type="text" id="adm-search-searx" placeholder="Opcional — vazio usa DuckDuckGo gratuito">
           </div>
           <div>
             <label style="font-size:0.85rem; color: var(--text-muted);">Google Serper API Key:</label>
@@ -1602,7 +1602,9 @@ dsh --model combo-super-payload
     function saveSearxUrl() {
       const url = document.getElementById('custom-searx-url').value.trim();
       localStorage.setItem('veroroute_searx_url', url);
-      alert('URL do SearXNG configurada localmente! Para torná-la global, defina SEARXNG_URL no .dev.vars.');
+      alert(url
+        ? 'URL opcional do SearXNG salva neste navegador.'
+        : 'URL removida. As buscas usarão DuckDuckGo gratuitamente, sem URL ou chave.');
     }
 
     // ============ ADMINISTRACAO ============
