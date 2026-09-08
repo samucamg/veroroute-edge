@@ -259,6 +259,17 @@ export function renderDashboardHtml(): string {
     .admin-model-result * { color:#0f172a; }
     #adm-model-results { background:#e2e8f0; padding:0.5rem; border-radius:8px; }
     #adm-model-results:empty { display:none; }
+    .model-select-item { min-height: 36px; }
+    .model-select-item > div { min-width: 0; flex: 1 1 auto; }
+    .model-select-item input[type=checkbox] {
+      width: 18px !important; height: 18px !important; min-width: 18px !important; max-width: 18px !important;
+      padding: 0 !important; margin: 0 0.4rem 0 0 !important; border-radius: 4px !important;
+      background: #ffffff !important; border: 1px solid #94a3b8 !important;
+      color: #0f172a !important; accent-color: #38bdf8; flex-shrink: 0; box-shadow: none !important;
+      opacity: 1 !important; appearance: auto;
+    }
+    .model-select-item .model-select-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; }
+    .model-select-item .btn { flex-shrink: 0; }
 
     main {
       flex: 1;
@@ -1251,6 +1262,9 @@ dsh --model combo-super-payload
             <button type="button" class="btn btn-secondary" style="padding: 0.25rem 0.55rem; font-size: 0.72rem;" onclick="selectAllDiscoveredModels(false)">
               Desmarcar
             </button>
+            <button type="button" id="mpm-btn-addall" class="btn btn-secondary" style="padding: 0.25rem 0.65rem; font-size: 0.72rem;" onclick="addAllDiscoveredModels()">
+              + Adicionar Todos
+            </button>
             <button type="button" id="mpm-btn-fetch" class="btn btn-secondary" style="padding: 0.25rem 0.65rem; font-size: 0.72rem;" onclick="fetchAvailableModels()">
               🔄 Recarregar
             </button>
@@ -1897,6 +1911,33 @@ dsh --model combo-super-payload
       } catch (e) {
         showToast('Erro: ' + e.message, 'error');
       }
+    }
+
+    async function addAllDiscoveredModels() {
+      if (!activeModalProviderId) return;
+      var checkboxes = document.querySelectorAll('.disc-model-cb:not(:disabled)');
+      var selected = [];
+      checkboxes.forEach(function(cb) { selected.push(cb.value); });
+      if (selected.length === 0) { showToast('Nenhum modelo novo para adicionar.', 'info'); return; }
+      try {
+        var res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/models', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ models: selected })
+        });
+        var data = await res.json();
+        if (data.ok) {
+          showToast(selected.length + ' modelo(s) adicionado(s) com sucesso!', 'success');
+          var p = (window._providersData || []).find(function(x) { return x.id === activeModalProviderId; });
+          if (p) p.models = Array.from(new Set([...(p.models || []), ...selected]));
+          renderActiveModelsList();
+          await loadAdmin();
+          renderActiveModelsList();
+          fetchAvailableModels();
+        } else {
+          showToast('Erro ao adicionar modelos: ' + JSON.stringify(data.error || data), 'error');
+        }
+      } catch (e) { showToast('Erro: ' + e.message, 'error'); }
     }
 
     async function addSelectedDiscoveredModels() {
