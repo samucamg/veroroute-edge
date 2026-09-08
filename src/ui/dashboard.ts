@@ -2,6 +2,16 @@
  * Dashboard Visual do VeroRoute Edge (SPA Embutida, Glassmorphism, Dark Mode)
  */
 
+import {
+  APP_VERSION,
+  APP_COMMIT_SHA,
+  UPSTREAM_REPO_URL,
+  UPSTREAM_REPO_NAME,
+  UPSTREAM_AUTHOR,
+  OMNIROUTE_INSPIRATION,
+  OMNIROUTE_URL,
+} from "../config/version";
+
 export function renderDashboardHtml(): string {
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -90,6 +100,23 @@ export function renderDashboardHtml(): string {
       color: var(--primary);
       border: 1px solid rgba(56, 189, 248, 0.3);
       text-transform: uppercase;
+    }
+
+    .badge-upstream {
+      background: rgba(129, 140, 248, 0.15);
+      color: #c7d2fe;
+      border: 1px solid rgba(129, 140, 248, 0.35);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      transition: all 0.2s;
+    }
+
+    .badge-upstream:hover {
+      background: rgba(129, 140, 248, 0.28);
+      color: #fff;
+      border-color: rgba(129, 140, 248, 0.6);
     }
 
     nav {
@@ -492,6 +519,9 @@ export function renderDashboardHtml(): string {
         <div class="brand-title">VeroRoute Edge</div>
       </div>
       <span class="badge-edge">Serverless Edge</span>
+      <a href="${UPSTREAM_REPO_URL}" target="_blank" rel="noopener noreferrer" class="badge-edge badge-upstream" title="Repositório Upstream Oficial">
+        Upstream: ${UPSTREAM_REPO_NAME} · v${APP_VERSION} (${APP_COMMIT_SHA}) ↗
+      </a>
     </div>
     <nav>
       <button class="nav-btn active" onclick="showTab('overview')">Visão Geral</button>
@@ -502,6 +532,7 @@ export function renderDashboardHtml(): string {
       <button class="nav-btn" onclick="showTab('playground')">Playground</button>
       <button class="nav-btn" onclick="showTab('docs')">Clientes</button>
       <button class="nav-btn nav-admin" onclick="showTab('admin')">⚙️ Administração</button>
+      <button class="nav-btn" onclick="openAboutModal()" style="border: 1px solid rgba(129,140,248,0.3); color: #c7d2fe;">ℹ️ Sobre & Upstream</button>
       <button id="btn-admin-auth-header" class="nav-btn" style="border: 1px solid rgba(56,189,248,0.3); color: var(--primary);" onclick="openAdminAuthModal()">🔑 Autenticar</button>
     </nav>
   </header>
@@ -509,6 +540,35 @@ export function renderDashboardHtml(): string {
   <main>
     <!-- TAB 1: VISÃO GERAL -->
     <div id="tab-overview" class="tab-pane active">
+      <!-- CARD UPSTREAM & ATRIBUIÇÃO OFICIAL -->
+      <div class="card" style="border-left: 4px solid var(--primary); background: linear-gradient(135deg, rgba(18, 24, 38, 0.85) 0%, rgba(30, 41, 67, 0.65) 100%); margin-bottom: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+          <div>
+            <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; flex-wrap: wrap;">
+              <span style="font-size: 1.15rem; font-weight: 700; color: #fff;">⚡ VeroRoute Edge</span>
+              <span class="badge-edge" style="background: rgba(56, 189, 248, 0.15); color: var(--primary);">v${APP_VERSION}</span>
+              <span class="badge-edge" style="background: rgba(16, 185, 129, 0.15); color: var(--emerald);">Commit: ${APP_COMMIT_SHA}</span>
+              <span class="badge-edge" style="background: rgba(129, 140, 248, 0.15); color: #c7d2fe;">Upstream Oficial</span>
+            </div>
+            <p style="color: var(--text-muted); font-size: 0.88rem; line-height: 1.5; margin-bottom: 0.4rem;">
+              Repositório Upstream: <a href="${UPSTREAM_REPO_URL}" target="_blank" rel="noopener noreferrer" style="color: var(--primary); text-decoration: none; font-weight: 600;">github.com/${UPSTREAM_REPO_NAME} ↗</a>
+            </p>
+            <p style="color: #94a3b8; font-size: 0.82rem; line-height: 1.5;">
+              Criado por <strong>${UPSTREAM_AUTHOR}</strong> · Inspirado diretamente na robustez do <a href="${OMNIROUTE_URL}" target="_blank" rel="noopener noreferrer" style="color: #a5b4fc; text-decoration: none;">${OMNIROUTE_INSPIRATION} ↗</a> e na arquitetura do VeroRoute.
+            </p>
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <button class="btn btn-secondary" onclick="checkForUpstreamUpdates(this)" style="font-size: 0.82rem; padding: 0.45rem 0.85rem;">
+              🔍 Verificar Atualizações
+            </button>
+            <button class="btn" onclick="openAboutModal()" style="font-size: 0.82rem; padding: 0.45rem 0.85rem;">
+              📖 Sobre & Sincronização
+            </button>
+          </div>
+        </div>
+        <div id="overview-update-alert" style="display: none; margin-top: 0.85rem; padding: 0.65rem 0.9rem; border-radius: 8px; font-size: 0.82rem;"></div>
+      </div>
+
       <div class="grid-stats">
         <div class="stat-card">
           <div class="stat-title">Modelos Conectados</div>
@@ -947,6 +1007,34 @@ dsh --model combo-super-payload
 
     <!-- TAB 8: ADMINISTRACAO -->
     <div id="tab-admin" class="tab-pane">
+      <!-- CARD UPSTREAM & INSTÂNCIA NO ADMIN -->
+      <div class="card" style="border-left: 4px solid var(--accent); background: linear-gradient(135deg, rgba(30, 27, 75, 0.5) 0%, rgba(18, 24, 38, 0.85) 100%); margin-bottom: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+          <div>
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; flex-wrap: wrap;">
+              <span style="font-size: 1.05rem; font-weight: 700; color: #fff;">🔒 Instância VeroRoute Edge</span>
+              <span class="badge-edge" style="background: rgba(129, 140, 248, 0.2); color: #c7d2fe;">v${APP_VERSION} · ${APP_COMMIT_SHA}</span>
+              <span class="badge-edge" style="background: rgba(16, 185, 129, 0.15); color: var(--emerald);">Edge Cloudflare</span>
+            </div>
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.35rem;">
+              Upstream Oficial: <a href="${UPSTREAM_REPO_URL}" target="_blank" rel="noopener noreferrer" style="color: var(--primary); font-weight: 600; text-decoration: none;">${UPSTREAM_REPO_NAME} ↗</a> · Autor: <strong>${UPSTREAM_AUTHOR}</strong>
+            </p>
+            <p style="color: #64748b; font-size: 0.8rem; line-height: 1.4;">
+              Esta instância serverless roda sobre Cloudflare Workers & KV. Todas as credenciais cadastradas abaixo persistem no namespace <code>OMNI_KEYS</code> mesmo após atualizações do código upstream.
+            </p>
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <button class="btn btn-secondary" onclick="checkForUpstreamUpdates(this)" style="font-size: 0.82rem; padding: 0.45rem 0.85rem;">
+              🔍 Checar Upstream
+            </button>
+            <button class="btn btn-secondary" onclick="openAboutModal()" style="font-size: 0.82rem; padding: 0.45rem 0.85rem;">
+              📖 Como Atualizar
+            </button>
+          </div>
+        </div>
+        <div id="admin-update-alert" style="display: none; margin-top: 0.85rem; padding: 0.65rem 0.9rem; border-radius: 8px; font-size: 0.82rem;"></div>
+      </div>
+
       <div class="card">
         <div class="card-title">🛠️ Painel de Administração de Provedores, Chaves e Modelos</div>
         <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">
@@ -1326,7 +1414,145 @@ dsh --model combo-super-payload
     </div>
   </div>
 
+  <!-- MODAL: SOBRE, UPSTREAM & GUIA DE ATUALIZAÇÃO -->
+  <div id="modal-about" class="modal-overlay">
+    <div class="modal-card" style="max-width: 680px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+          <span style="font-size: 1.5rem;">⚡</span>
+          <div>
+            <h3 style="margin: 0; font-size: 1.25rem; color: #fff;">Sobre o VeroRoute Edge</h3>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">v${APP_VERSION} (Build/Commit: <code>${APP_COMMIT_SHA}</code>)</span>
+          </div>
+        </div>
+        <button type="button" class="btn btn-secondary" onclick="closeAboutModal()" style="padding: 0.3rem 0.6rem; font-size: 0.85rem;">✕</button>
+      </div>
+
+      <!-- Seção de Upstream & Autoria -->
+      <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--card-border); border-radius: 10px; padding: 1rem; margin-bottom: 1.25rem;">
+        <div style="font-size: 0.9rem; font-weight: 600; color: #fff; margin-bottom: 0.4rem;">Origem & Atribuição</div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 0.5rem;">
+          <strong>VeroRoute Edge</strong> é um projeto de código aberto desenvolvido por <strong>${UPSTREAM_AUTHOR}</strong>, concebido como um gateway de IA aerodinâmico e 100% serverless no Cloudflare Workers.
+        </p>
+        <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 0.5rem;">
+          💡 <strong>Lineage & Inspiração:</strong> Inspirado na robustez de proxy e roteamento do projeto <a href="${OMNIROUTE_URL}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); font-weight: 600; text-decoration: none;">${OMNIROUTE_INSPIRATION} ↗</a> e na arquitetura de economia de tokens do VeroRoute.
+        </p>
+        <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
+          🔗 <strong>Repositório Upstream Oficial:</strong><br>
+          <a href="${UPSTREAM_REPO_URL}" target="_blank" rel="noopener noreferrer" style="color: var(--primary); font-weight: 600; word-break: break-all;">${UPSTREAM_REPO_URL} ↗</a>
+        </p>
+      </div>
+
+      <!-- Verificador de Atualizações em Tempo Real -->
+      <div style="background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 10px; padding: 1rem; margin-bottom: 1.25rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+          <span style="font-size: 0.9rem; font-weight: 600; color: var(--primary);">📡 Verificador de Atualizações do Upstream</span>
+          <button type="button" class="btn" onclick="checkForUpstreamUpdates(this)" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">Verificar Agora</button>
+        </div>
+        <div id="modal-update-status" style="font-size: 0.82rem; color: var(--text-muted);">
+          Clique em "Verificar Agora" para checar novos commits ou versões no repositório upstream oficial.
+        </div>
+      </div>
+
+      <!-- Como Manter sua Instância Atualizada -->
+      <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--card-border); border-radius: 10px; padding: 1rem; margin-bottom: 1.25rem;">
+        <div style="font-size: 0.9rem; font-weight: 600; color: #fff; margin-bottom: 0.5rem;">🔄 Como Atualizar Sua Instância (Sem Perder Configurações)</div>
+        <p style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 0.6rem;">
+          Ao implantar via <em>Deploy to Cloudflare</em>, um repositório é clonado na sua conta. Suas chaves de provedores, combos e configurações são armazenadas no Cloudflare KV (<code>OMNI_KEYS</code> e <code>OMNI_CACHE</code>). Atualizar o código <strong>NÃO</strong> apaga suas chaves nem configurações.
+        </p>
+        <div style="font-size: 0.82rem; color: #fff; font-weight: 600; margin-bottom: 0.35rem;">Opção 1: Via Git CLI (Recomendado)</div>
+        <div class="code-box" style="font-size: 0.78rem; padding: 0.6rem; margin-bottom: 0.75rem;">
+git remote add upstream ${UPSTREAM_REPO_URL}.git<br>
+git pull upstream master<br>
+npx wrangler deploy
+        </div>
+
+        <div style="font-size: 0.82rem; color: #fff; font-weight: 600; margin-bottom: 0.35rem;">Opção 2: Via Cloudflare Dashboard</div>
+        <p style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.5;">
+          No painel do Cloudflare Workers & Pages, acione um <em>Redeploy</em> a partir do commit sincronizado da branch <code>master</code>, ou faça o redeploy via Wrangler CLI. Seus namespaces de KV permanecerão vinculados.
+        </p>
+      </div>
+
+      <!-- Licença & Atribuição MIT -->
+      <div style="font-size: 0.78rem; color: #64748b; line-height: 1.5; text-align: center;">
+        Distribuído sob Licença MIT. É obrigatório manter o aviso de direitos autorais e atribuição à autoria de Samuel Santos e ao projeto upstream em qualquer redistribuição ou modificação.
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeAboutModal()">Fechar</button>
+      </div>
+    </div>
+  </div>
+
   <script>
+    function openAboutModal() {
+      var m = document.getElementById('modal-about');
+      if (m) m.classList.add('active');
+    }
+
+    function closeAboutModal() {
+      var m = document.getElementById('modal-about');
+      if (m) m.classList.remove('active');
+    }
+
+    async function checkForUpstreamUpdates(btnEl) {
+      var origText = btnEl ? btnEl.innerHTML : '';
+      if (btnEl) {
+        btnEl.disabled = true;
+        btnEl.innerHTML = '⏳ Checando...';
+      }
+
+      var currentSha = '${APP_COMMIT_SHA}';
+      var statusModal = document.getElementById('modal-update-status');
+      var overviewAlert = document.getElementById('overview-update-alert');
+      var adminAlert = document.getElementById('admin-update-alert');
+
+      function renderResult(html, isSuccess, isBehind) {
+        if (statusModal) statusModal.innerHTML = html;
+        [overviewAlert, adminAlert].forEach(function(el) {
+          if (el) {
+            el.style.display = 'block';
+            el.innerHTML = html;
+            el.style.background = isBehind ? 'rgba(245, 158, 11, 0.15)' : (isSuccess ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)');
+            el.style.border = isBehind ? '1px solid rgba(245, 158, 11, 0.4)' : (isSuccess ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(244, 63, 94, 0.4)');
+            el.style.color = isBehind ? '#fde68a' : (isSuccess ? '#a7f3d0' : '#fecdd3');
+          }
+        });
+      }
+
+      try {
+        var resp = await fetch('https://api.github.com/repos/samucamg/veroroute-edge/commits/master', {
+          headers: { 'Accept': 'application/vnd.github.v3+json' }
+        });
+        if (!resp.ok) {
+          throw new Error('HTTP ' + resp.status + ': ' + resp.statusText);
+        }
+        var data = await resp.json();
+        var remoteSha = (data && data.sha) ? data.sha.substring(0, 7) : '';
+        var commitMsg = (data && data.commit && data.commit.message) ? data.commit.message.split('\\n')[0] : '';
+        var commitUrl = (data && data.html_url) ? data.html_url : 'https://github.com/samucamg/veroroute-edge';
+
+        if (remoteSha && (remoteSha.startsWith(currentSha.substring(0, 7)) || currentSha.startsWith(remoteSha))) {
+          renderResult('✅ <strong>Sua instância está 100% atualizada com o Upstream oficial!</strong> (Commit: <code>' + currentSha + '</code>)', true, false);
+          showToast('Sua instância está atualizada com o upstream oficial!', 'success');
+        } else {
+          var html = '🚀 <strong>Nova atualização disponível no Upstream!</strong><br>' +
+            'Versão local: <code>' + currentSha + '</code> → Upstream mais recente: <a href="' + commitUrl + '" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline; font-weight: bold;"><code>' + remoteSha + '</code></a>: <em>"' + escapeHtml(commitMsg) + '"</em>.<br>' +
+            '<span style="font-size:0.78rem;">Siga o guia no botão "Como Atualizar" para sincronizar com segurança sem perder suas chaves do KV.</span>';
+          renderResult(html, true, true);
+          showToast('Nova atualização disponível no upstream (' + remoteSha + ')', 'info');
+        }
+      } catch (err) {
+        var msg = '⚠️ Não foi possível verificar o GitHub: ' + (err.message || err);
+        renderResult(msg, false, false);
+        showToast(msg, 'error');
+      } finally {
+        if (btnEl) {
+          btnEl.disabled = false;
+          btnEl.innerHTML = origText || '🔍 Verificar Atualizações';
+        }
+      }
+    }
     function showTab(tabId) {
       document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
       document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));

@@ -91,6 +91,27 @@ npx wrangler secret put AUTH_TOKEN
 npx wrangler deploy
 ```
 
+### 🔄 Staying Updated with the Official Upstream
+
+When you deploy via the **Deploy to Cloudflare** button, Cloudflare creates a repository clone under your GitHub account. Because **VeroRoute Edge** continues receiving security fixes, provider adapters, and performance enhancements in the official upstream repository, you should keep your instance synced:
+
+- **Via Git CLI (Recommended)**:
+  ```bash
+  # Add the official upstream remote
+  git remote add upstream https://github.com/samucamg/veroroute-edge.git
+
+  # Fetch and merge upstream changes
+  git pull upstream master
+
+  # Redeploy to Cloudflare Workers
+  npx wrangler deploy
+  ```
+
+- **Via Cloudflare Dashboard**:
+  In the Cloudflare Workers & Pages dashboard, trigger a build/redeploy from your updated branch.
+
+> 💡 **Zero Config Loss Guarantee**: All your provider keys, custom combos, search configurations, and OAuth tokens are stored in the Cloudflare KV namespaces (`OMNI_KEYS` and `OMNI_CACHE`). Updating the application code will **never** overwrite or delete your stored credentials and settings!
+
 ---
 
 ## 🛠️ Configuration & Environment Variables
@@ -126,6 +147,18 @@ npx wrangler deploy
 | `/api/admin/combos` | GET/POST/DELETE | Master Bearer | Custom combo route definitions |
 | `/api/admin/circuits` | GET | Master Bearer | Upstream provider circuit breaker states |
 | `/api/admin/usage/:keyId` | GET | Master Bearer | Daily and monthly usage & estimated cost metrics |
+
+---
+
+## 📄 License & Upstream Attribution
+
+This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
+
+- **Author & Maintainer**: Samuel Santos ([@samucamg](https://github.com/samucamg))
+- **Official Upstream Repository**: [https://github.com/samucamg/veroroute-edge](https://github.com/samucamg/veroroute-edge)
+- **Lineage & Inspiration**: Directly inspired by [OmniRoute](https://github.com/diegosouzapw/OmniRoute) by [@diegosouzapw](https://github.com/diegosouzapw) and the token-saving principles of VeroRoute.
+
+> ⚠️ **Mandatory Attribution Notice**: In accordance with the MIT License terms, any public clone, fork, or derived distribution of this project **must retain the copyright notice, original author attribution, and link to the official upstream repository**.
 
 ---
 
@@ -186,6 +219,27 @@ npx wrangler secret put AUTH_TOKEN
 npx wrangler deploy
 ```
 
+### 🔄 Como Manter sua Instância Atualizada com o Upstream Oficial
+
+Ao implantar pelo botão **Deploy to Cloudflare**, a Cloudflare cria uma cópia (clone) do repositório sob a sua conta do GitHub. Como o **VeroRoute Edge** continua recebendo melhorias constantes, novos provedores e correções de segurança no repositório oficial, você pode manter sua instância sincronizada:
+
+- **Via Git CLI (Recomendado)**:
+  ```bash
+  # Adicione o repositório upstream oficial como remote
+  git remote add upstream https://github.com/samucamg/veroroute-edge.git
+
+  # Puxe as atualizações mais recentes
+  git pull upstream master
+
+  # Faça o redeploy para o Cloudflare Workers
+  npx wrangler deploy
+  ```
+
+- **Via Cloudflare Dashboard**:
+  No painel do Cloudflare Workers & Pages, acione um redeploy a partir da sua branch `master` atualizada.
+
+> 💡 **Garantia de Preservação das Configurações**: Todas as suas chaves de API, modelos, rotas de combo e tokens OAuth ficam armazenados com segurança nos Namespaces do Cloudflare KV (`OMNI_KEYS` e `OMNI_CACHE`). Atualizar o código do worker **nunca** apaga suas configurações ou credenciais salvas!
+
 ---
 
 ## 🔐 Configuração do Google OAuth (Antigravity CLI / Code Assist)
@@ -211,6 +265,13 @@ Por requisitos de segurança do Google Identity, cada aplicativo web deve regist
 
 ---
 
-## 📄 Licença
+## 📄 Licença & Atribuição ao Upstream Oficial
 
 Este projeto é distribuído sob a licença **MIT**. Veja [LICENSE](LICENSE) para mais detalhes.
+
+- **Autor e Mantenedor**: Samuel Santos ([@samucamg](https://github.com/samucamg))
+- **Repositório Upstream Oficial**: [https://github.com/samucamg/veroroute-edge](https://github.com/samucamg/veroroute-edge)
+- **Origem & Lineage**: Inspirado diretamente no [OmniRoute](https://github.com/diegosouzapw/OmniRoute) criado por [@diegosouzapw](https://github.com/diegosouzapw) e nos conceitos do VeroRoute.
+
+> ⚠️ **Aviso de Atribuição Obrigatória**: Conforme os termos da licença MIT, qualquer clonagem, fork ou redistribuição pública deste código **deve obrigatoriamente manter o aviso de direitos autorais, o nome do autor original e o link de referência para o repositório upstream oficial**.
+

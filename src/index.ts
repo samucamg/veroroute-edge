@@ -13,6 +13,7 @@ import { exchangeAntigravityCode, getAntigravityAuthUrl } from "./oauth/antigrav
 import { executeMcpTool, handleMcpSse, MCP_TOOLS_LIST } from "./mcp/server";
 import { renderDashboardHtml } from "./ui/dashboard";
 import { adminRouter } from "./admin/routes";
+import { APP_VERSION, APP_COMMIT_SHA, UPSTREAM_REPO_URL, UPSTREAM_AUTHOR } from "./config/version";
 import {
   extractBearer,
   resolvePrincipal,
@@ -127,18 +128,31 @@ app.all("/api/v1/vscode/:token/*", async (c) => {
 });
 
 // ---------------------------------------------------------------------------
+// Upstream & Version headers on all responses
+// ---------------------------------------------------------------------------
+app.use("*", async (c, next) => {
+  await next();
+  c.header("X-VeroRoute-Version", APP_VERSION);
+  c.header("X-VeroRoute-Commit", APP_COMMIT_SHA);
+  c.header("X-VeroRoute-Upstream", UPSTREAM_REPO_URL);
+});
+
+// ---------------------------------------------------------------------------
 // ROOT — Dashboard
 // ---------------------------------------------------------------------------
 app.get("/", (c) => c.html(renderDashboardHtml()));
 
 // ---------------------------------------------------------------------------
-// Health check (public — only status, no config data)
+// Health check (public — status, version and upstream origin)
 // ---------------------------------------------------------------------------
 app.get("/health", (c) =>
   c.json({
     status: "ok",
     engine: "veroroute-edge",
-    version: "1.0.0",
+    version: APP_VERSION,
+    commit: APP_COMMIT_SHA,
+    upstream: UPSTREAM_REPO_URL,
+    author: UPSTREAM_AUTHOR,
     architecture: "Cloudflare Workers Serverless",
     timestamp: new Date().toISOString(),
   })
