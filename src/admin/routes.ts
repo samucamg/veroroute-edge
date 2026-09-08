@@ -165,7 +165,10 @@ adminRouter.post("/providers/:id/keys", async (c) => {
   for (const item of credentials) {
     if (item.proxyUrl) {
       try { validateProxyUrl(item.proxyUrl); }
-      catch { return c.json({ error: { message: "Proxy deve usar uma URL HTTPS pública e sem credenciais embutidas", type: "validation" } }, 400); }
+      catch (err) {
+        const detail = err instanceof Error ? err.message : "URL de proxy inválida";
+        return c.json({ error: { message: detail, type: "validation" } }, 400);
+      }
     }
   }
   const merged = await appendProviderCredentials(c.env, id, credentials.filter((item) => item.apiKey));

@@ -1169,9 +1169,9 @@ dsh --model combo-super-payload
         </label>
         <textarea id="mpk-new-key" rows="3" placeholder="Cole uma ou mais chaves (separe por vírgula ou uma por linha)" style="width: 100%; font-family: monospace; font-size: 0.82rem;"></textarea>
         <label style="display:block; font-size:0.82rem; color:var(--text-muted); margin:0.65rem 0 0.35rem;">Proxy HTTP(S) opcional para estas chaves:</label>
-        <input id="mpk-proxy-url" type="url" placeholder="https://relay.exemplo.com/proxy?url={url}" style="width:100%; font-family:monospace; font-size:0.82rem;" />
+        <input id="mpk-proxy-url" type="url" placeholder="http://proxy.exemplo.com/relay?url={url} ou https://..." style="width:100%; font-family:monospace; font-size:0.82rem;" />
         <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.3rem;">
-          💡 O pool rotaciona as chaves automaticamente. O proxy deve ser um relay HTTP(S): use <code>{url}</code> no endereço ou o destino será enviado em <code>?url=</code>. O relay verá a chave e o conteúdo.
+          💡 O pool rotaciona as chaves automaticamente. O proxy deve ser um relay HTTP(S): use <code>{url}</code> no endereço ou o destino será enviado em <code>?url=</code>. O relay verá a chave e o conteúdo. <strong>HTTP é aceito, mas transmite chave, prompt e resposta sem criptografia.</strong>
         </div>
       </div>
 
@@ -1702,7 +1702,8 @@ dsh --model combo-super-payload
       }
       const keys = val.split(/[\\n,]+/).map(function(s) { return s.trim(); }).filter(Boolean);
       const proxyUrl = document.getElementById('mpk-proxy-url').value.trim();
-      if (proxyUrl && !proxyUrl.toLowerCase().startsWith('https://')) { showToast('O proxy deve começar com https://', 'error'); return; }
+      const proxyUrlLower = proxyUrl.toLowerCase();
+      if (proxyUrl && !proxyUrlLower.startsWith('http://') && !proxyUrlLower.startsWith('https://')) { showToast('O proxy deve começar com http:// ou https://', 'error'); return; }
       try {
         const res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/keys', {
           method: 'POST',
