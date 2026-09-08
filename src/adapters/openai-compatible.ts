@@ -1,7 +1,6 @@
 import { getProviderConfig, PROVIDER_REGISTRY } from "@/config/providers";
 import { formatGeminiSSEChunkToOpenAI, formatGeminiToOpenAI, formatOpenAIToGemini } from "./gemini";
 import type { ChatCompletionRequest } from "@/types/openai";
-import { proxyFetch } from "@/routing/proxy";
 
 /**
  * Executa chamadas para qualquer provedor compatível com OpenAI ou Google Gemini REST
@@ -10,8 +9,7 @@ export async function executeOpenAICompatible(
   request: ChatCompletionRequest,
   providerId: string,
   apiKey: string,
-  modelName: string,
-  proxyUrl?: string
+  modelName: string
 ): Promise<Response> {
   const provider = getProviderConfig(providerId);
   if (!provider) {
@@ -29,11 +27,11 @@ export async function executeOpenAICompatible(
 
     const geminiBody = formatOpenAIToGemini(request);
 
-    const res = await proxyFetch(url, {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(geminiBody),
-    }, proxyUrl);
+    });
 
     if (!res.ok) {
       const errText = await res.text();
@@ -149,11 +147,11 @@ export async function executeOpenAICompatible(
     compression: undefined,
   };
 
-  const upstreamResponse = await proxyFetch(endpoint, {
+  const upstreamResponse = await fetch(endpoint, {
     method: "POST",
     headers,
     body: JSON.stringify(bodyPayload),
-  }, proxyUrl);
+  });
 
   // Em caso de streaming SSE pass-through direto
   if (request.stream && upstreamResponse.ok) {

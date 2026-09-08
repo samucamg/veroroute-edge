@@ -1,5 +1,7 @@
 import type { EnvBindings } from "@/types/provider";
-import type { ProviderCredential } from "@/routing/proxy";
+export interface ProviderCredential {
+  apiKey: string;
+}
 
 // =============================================================================
 // Store Administrativo do VeroRoute Edge (persistido no Cloudflare KV OMNI_KEYS)
@@ -313,7 +315,7 @@ export async function getStoredProviderCredentials(env: EnvBindings, providerId:
       if (Array.isArray(parsed)) {
         return parsed
           .filter((item) => item && typeof item.apiKey === "string" && item.apiKey.trim())
-          .map((item) => ({ apiKey: item.apiKey.trim(), proxyUrl: item.proxyUrl?.trim() || undefined }));
+          .map((item) => ({ apiKey: item.apiKey.trim() }));
       }
     } catch { /* fall back to legacy storage */ }
   }
@@ -329,9 +331,9 @@ export async function setStoredProviderCredentials(
   const kv = env.OMNI_KEYS;
   if (!kv) return;
   const clean = credentials
-    .map((item) => ({ apiKey: item.apiKey.trim(), proxyUrl: item.proxyUrl?.trim() || undefined }))
+    .map((item) => ({ apiKey: item.apiKey.trim() }))
     .filter((item) => item.apiKey);
-  const unique = Array.from(new Map(clean.map((item) => [item.apiKey + "\n" + (item.proxyUrl || ""), item])).values());
+  const unique = Array.from(new Map(clean.map((item) => [item.apiKey, item])).values());
   if (unique.length === 0) {
     await Promise.all([kv.delete("credentials_" + providerId), kv.delete(KV_CUSTOM_KEYS_PREFIX + providerId)]);
   } else {
@@ -360,9 +362,9 @@ export async function appendProviderCredentials(
 ): Promise<ProviderCredential[]> {
   const existing = await getStoredProviderCredentials(env, providerId);
   const merged = Array.from(new Map([...existing, ...newCredentials]
-    .map((item) => ({ apiKey: item.apiKey.trim(), proxyUrl: item.proxyUrl?.trim() || undefined }))
+    .map((item) => ({ apiKey: item.apiKey.trim() }))
     .filter((item) => item.apiKey)
-    .map((item) => [item.apiKey + "\n" + (item.proxyUrl || ""), item])).values());
+    .map((item) => [item.apiKey, item])).values());
   await setStoredProviderCredentials(env, providerId, merged);
   return merged;
 }

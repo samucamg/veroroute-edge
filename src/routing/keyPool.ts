@@ -1,6 +1,6 @@
 import type { EnvBindings } from "@/types/provider";
 import { getStoredProviderCredentials } from "@/admin/store";
-import type { ProviderCredential } from "./proxy";
+import type { ProviderCredential } from "@/admin/store";
 
 const keyRotationIndex: Record<string, number> = {};
 const keyCooldowns: Map<string, number> = new Map();
@@ -22,7 +22,7 @@ export async function getProviderCredentials(env: EnvBindings, providerId: strin
   const all = [...environmentCredentials(env, providerId), ...await getStoredProviderCredentials(env, providerId)];
   const seen = new Set<string>();
   return all.filter((entry) => {
-    const id = entry.apiKey + "\n" + (entry.proxyUrl || "");
+    const id = entry.apiKey;
     if (seen.has(id)) return false;
     seen.add(id);
     return true;

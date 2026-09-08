@@ -102,7 +102,7 @@ async function describeImageWithVision(imageUrl: string, env: EnvBindings): Prom
     stream: false,
   };
 
-  const res = await executeOpenAICompatible(visionReq, "gemini", geminiKey, "gemini-2.5-flash", credential.proxyUrl);
+  const res = await executeOpenAICompatible(visionReq, "gemini", geminiKey, "gemini-2.5-flash");
   if (!res.ok) return "Não foi possível transcrever a imagem.";
 
   const data = (await res.json()) as any;

@@ -1168,11 +1168,6 @@ dsh --model combo-super-payload
           Adicionar Chave(s) ao Pool de Balanceamento:
         </label>
         <textarea id="mpk-new-key" rows="3" placeholder="Cole uma ou mais chaves (separe por vírgula ou uma por linha)" style="width: 100%; font-family: monospace; font-size: 0.82rem;"></textarea>
-        <label style="display:block; font-size:0.82rem; color:var(--text-muted); margin:0.65rem 0 0.35rem;">Proxy HTTP(S) opcional para estas chaves:</label>
-        <input id="mpk-proxy-url" type="url" placeholder="http://proxy.exemplo.com/relay?url={url} ou https://..." style="width:100%; font-family:monospace; font-size:0.82rem;" />
-        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.3rem;">
-          💡 O pool rotaciona as chaves automaticamente. O proxy deve ser um relay HTTP(S): use <code>{url}</code> no endereço ou o destino será enviado em <code>?url=</code>. O relay verá a chave e o conteúdo. <strong>HTTP é aceito, mas transmite chave, prompt e resposta sem criptografia.</strong>
-        </div>
       </div>
 
       <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.25rem;">
@@ -1685,7 +1680,6 @@ dsh --model combo-super-payload
         '<strong>Status do Pool:</strong> ' + (count > 0 ? '<span style="color:var(--emerald); font-weight:600;">' + count + ' chave(s) ativa(s) no balanceamento</span>' : '<span style="color:var(--amber);">Nenhuma chave cadastrada neste Worker</span>');
 
       document.getElementById('mpk-new-key').value = '';
-      document.getElementById('mpk-proxy-url').value = '';
       document.getElementById('modal-provider-keys').classList.add('active');
     }
 
@@ -1701,21 +1695,17 @@ dsh --model combo-super-payload
         return;
       }
       const keys = val.split(/[\\n,]+/).map(function(s) { return s.trim(); }).filter(Boolean);
-      const proxyUrl = document.getElementById('mpk-proxy-url').value.trim();
-      const proxyUrlLower = proxyUrl.toLowerCase();
-      if (proxyUrl && !proxyUrlLower.startsWith('http://') && !proxyUrlLower.startsWith('https://')) { showToast('O proxy deve começar com http:// ou https://', 'error'); return; }
       try {
         const res = await adminFetch('/api/admin/providers/' + activeModalProviderId + '/keys', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ credentials: keys.map(function(apiKey) { return { apiKey: apiKey, proxyUrl: proxyUrl || undefined }; }) })
+          body: JSON.stringify({ credentials: keys.map(function(apiKey) { return { apiKey: apiKey }; }) })
         });
         const data = await res.json();
         if (data.ok) {
           const poolCount = data.keyCount !== undefined ? data.keyCount : (data.keys ? data.keys.length : keys.length);
           showToast('Chave(s) salva(s) com sucesso! Pool atual: ' + poolCount + ' chaves.', 'success');
           document.getElementById('mpk-new-key').value = '';
-          document.getElementById('mpk-proxy-url').value = '';
           await loadAdmin();
           openProviderKeysModal(activeModalProviderId);
         } else {
@@ -2266,7 +2256,7 @@ dsh --model combo-super-payload
         (data.results || []).forEach(function(r) {
           html += '<div style="margin-bottom:0.5rem; padding:0.4rem; background:rgba(255,255,255,0.03); border-radius:6px;">' +
             '<a href="' + escapeHtml(r.url) + '" target="_blank" style="color:var(--primary); font-weight:600; text-decoration:none;">' + escapeHtml(r.title) + '</a>' +
-            '<p style="margin:0.2rem 0 0 0; font-size:0.75rem; color:var(--text-muted);">' + escapeHtml(r.snippet) + '</p>' +
+            '<p style="margin:0.2rem 0 0 0; font-size:0.75rem; color:var(--text-muted);">' + escapeHtml(r.content || r.snippet || '') + '</p>' +
           '</div>';
         });
         resEl.innerHTML = html || 'Nenhum resultado retornado.';

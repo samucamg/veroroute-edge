@@ -16,7 +16,6 @@ import {
 import { extractBearer, resolvePrincipal, serverMisconfigured, unauthorized, maskSecret } from "./auth";
 import { executeOpenAICompatible } from "@/adapters/openai-compatible";
 import { selectActiveCredential } from "@/routing/keyPool";
-import { proxyFetch, validateProxyUrl } from "@/routing/proxy";
 import { getAntigravityOAuthCredentials } from "./store";
 import type { EnvBindings } from "@/types/provider";
 import { getUsageSummary } from "@/routing/costTracker";
@@ -159,20 +158,11 @@ adminRouter.delete("/providers/:id", async (c) => {
 
 adminRouter.post("/providers/:id/keys", async (c) => {
   const id = c.req.param("id");
-  const body = (await c.req.json()) as { keys?: string[]; credentials?: Array<{ apiKey?: string; proxyUrl?: string }> };
-  const credentials = (body.credentials || []).map((item) => ({ apiKey: item.apiKey?.trim() || "", proxyUrl: item.proxyUrl?.trim() || undefined }));
-  credentials.push(...(body.keys || []).map((apiKey) => ({ apiKey: apiKey.trim(), proxyUrl: undefined })));
-  for (const item of credentials) {
-    if (item.proxyUrl) {
-      try { validateProxyUrl(item.proxyUrl); }
-      catch (err) {
-        const detail = err instanceof Error ? err.message : "URL de proxy inválida";
-        return c.json({ error: { message: detail, type: "validation" } }, 400);
-      }
-    }
-  }
+  const body = (await c.req.json()) as { keys?: string[]; credentials?: Array<{ apiKey?: string }> };
+  const credentials = (body.credentials || []).map((item) => ({ apiKey: item.apiKey?.trim() || "" }));
+  credentials.push(...(body.keys || []).map((apiKey) => ({ apiKey: apiKey.trim() })));
   const merged = await appendProviderCredentials(c.env, id, credentials.filter((item) => item.apiKey));
-  return c.json({ ok: true, id, keyCount: merged.length, count: merged.length, keys: merged.map((item) => ({ key: maskSecret(item.apiKey), proxyUrl: item.proxyUrl || "" })) });
+  return c.json({ ok: true, id, keyCount: merged.length, count: merged.length, keys: merged.map((item) => ({ key: maskSecret(item.apiKey) })) });
 });
 
 adminRouter.delete("/providers/:id/keys", async (c) => {
@@ -238,13 +228,9 @@ adminRouter.post("/providers/:id/fetch-models", async (c) => {
   const prov = cfg.customProviders[id] || PROVIDER_REGISTRY[id];
   const preset = FREE_PROVIDER_PRESETS.find((p) => p.id === id);
 
-  // Use the same pool entry for its API key and optional proxy URL.
   let apiKey = body.apiKey?.trim() || "";
-  let proxyUrl: string | undefined;
   if (!apiKey) {
-    const selectedCredential = await selectActiveCredential(c.env, id);
-    apiKey = selectedCredential.apiKey;
-    proxyUrl = selectedCredential.proxyUrl;
+    apiKey = (await selectActiveCredential(c.env, id)).apiKey;
   }
 
   const baseUrl = prov?.baseUrl || preset?.baseUrl || "";
@@ -297,7 +283,7 @@ adminRouter.post("/providers/:id/fetch-models", async (c) => {
       }
 
       if (url) {
-        const res = await proxyFetch(url, { headers, signal: controller.signal }, proxyUrl);
+        const res = await fetch(url, { headers, signal: controller.signal });
         clearTimeout(timeoutId);
 
         if (res.ok) {
@@ -494,8 +480,8 @@ adminRouter.post("/search/test", async (c) => {
   const body = (await c.req.json()) as { query: string; provider?: string };
   if (!body.query) return c.json({ error: "query e obrigatorio" }, 400);
   try {
-    const results = await dispatchSearch({ query: body.query } as never, c.env);
-    return c.json({ ok: true, results });
+    const rr = await dispatchSearch({ query: body.query } as never, c.env);
+    return c.json({ ok: true, engine: rr.provider, results: rr.results || [], total_results: rr.total_results });
   } catch (err: unknown) {
     return c.json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 500);
   }
@@ -676,7 +662,7 @@ adminRouter.post("/combos/test", async (c) => {
     try {
       // M-10: per-target timeout
       const res = await Promise.race([
-        executeOpenAICompatible(testReq, target.provider, apiKey, target.model, credential.proxyUrl),
+        executeOpenAICompatible(testReq, target.provider, apiKey, target.model),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error("Timeout " + COMBO_TEST_TIMEOUT_MS + "ms")), COMBO_TEST_TIMEOUT_MS)
         ),

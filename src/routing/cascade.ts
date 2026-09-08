@@ -179,9 +179,9 @@ export async function dispatchWithCascade(
               return executeAntigravityRequest(outbound, antigravResult.accessToken, antigravResult.projectId || "", candidate.model);
             }
             if (candidate.provider === "1min") {
-              return executeOneMinAI(outbound, apiKey, candidate.model, credential.proxyUrl);
+              return executeOneMinAI(outbound, apiKey, candidate.model);
             }
-            return executeOpenAICompatible(outbound, candidate.provider, apiKey, candidate.model, credential.proxyUrl);
+            return executeOpenAICompatible(outbound, candidate.provider, apiKey, candidate.model);
           }, candidateTimeout);
         } catch (err) {
           if (err instanceof UpstreamTimeout) {
