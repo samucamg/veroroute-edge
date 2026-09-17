@@ -140,7 +140,7 @@ const DEFAULT_COMBOS: Record<string, ComboConfig> = {
 export { DEFAULT_COMBOS };
 
 const DEFAULT_ADMIN_CONFIG: AdminConfig = {
-  version: 2,
+  version: 3,
   _seq: 0,
   _deletedDefaultCombos: [],
   providerStates: {},
@@ -189,10 +189,13 @@ function mergeComos(p: Partial<AdminConfig>): Record<string, ComboConfig> {
 }
 
 /**
- * Migração Idempotente de Configuração do Painel Administrativo para v2 (Fase 5).
+ * Migração Idempotente de Configuração do Painel Administrativo para v3.
+ * v2 → v3: reprocessa provedores duplicados que escaparam da migração anterior
+ *   (o KV de produção já estava em v2, então a migração nunca corria novamente).
  * - Saneia provedores customizados duplicados (openrouter-free, groq-lpu, cerebras-wse, cloudflare-workers-ai-native)
  * - Transfere credenciais de chaves para os provedores canônicos sem perda
  * - Limpa modelos duplicados em customModels que já constam nos catálogos estáticos
+ * - Limpa modelStates e removedModels de referências a IDs duplicados
  * - Ajusta alvos de combos para apontar para provedores canônicos
  */
 export async function migrateAdminConfigToV2(
@@ -213,7 +216,7 @@ export async function migrateAdminConfigToV2(
   // Para persistir dados no KV durante a migração, use kv.put() DIRETAMENTE.
   // Violar este contrato causa recursão infinita → timeout 504 no Worker.
   // =========================================================================
-  if (cfg.version && cfg.version >= 2) {
+  if (cfg.version && cfg.version >= 3) {
     return false;
   }
 
@@ -389,7 +392,38 @@ export async function migrateAdminConfigToV2(
     }
   }
 
-  cfg.version = 2;
+  // 4. Limpar modelStates e removedModels de referências a IDs duplicados/alias
+  //    Ex.: "groq-lpu-ultra-fast-inference/llama-3.3-70b-versatile" -> deletar
+  for (const key of Object.keys(cfg.modelStates || {})) {
+    const slashIdx = key.indexOf("/");
+    if (slashIdx === -1) continue;
+    const prefix = key.slice(0, slashIdx);
+    const normalized = normalizeProviderId(prefix);
+    if (normalized !== prefix) {
+      // Migrar estado para a chave canônica, se ainda não existir
+      const canonicalKey = normalized + key.slice(slashIdx);
+      if (!cfg.modelStates[canonicalKey]) {
+        cfg.modelStates[canonicalKey] = cfg.modelStates[key];
+      }
+      delete cfg.modelStates[key];
+      modified = true;
+    }
+  }
+
+  for (const dupId of Object.keys(cfg.removedModels || {})) {
+    const normalized = normalizeProviderId(dupId);
+    if (normalized !== dupId) {
+      // Migrar modelos removidos para o provedor canônico
+      const existingRemoved = cfg.removedModels[normalized] || [];
+      cfg.removedModels[normalized] = Array.from(
+        new Set([...existingRemoved, ...(cfg.removedModels[dupId] || [])])
+      );
+      delete cfg.removedModels[dupId];
+      modified = true;
+    }
+  }
+
+  cfg.version = 3;
   return true;
 }
 
@@ -425,7 +459,7 @@ export async function getAdminConfig(env: EnvBindings): Promise<AdminConfig> {
         providerBaseUrls: { ...(p.providerBaseUrls ?? {}) },
       };
 
-      if (!p.version || p.version < 2) {
+      if (!p.version || p.version < 3) {
         try {
           const migrated = await migrateAdminConfigToV2(env, merged);
           if (migrated && kv) {

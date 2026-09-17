@@ -257,7 +257,7 @@ describe("Dossiê de Falhas do Subsistema de Modelos (Casos de Regressão)", () 
 
     const migrated = await migrateAdminConfigToV2(undefined, mockConfig);
     expect(migrated).toBe(true);
-    expect(mockConfig.version).toBe(2);
+    expect(mockConfig.version).toBe(3);
 
     // Duplicatas foram removidas de customProviders
     expect(mockConfig.customProviders["openrouter-free-models"]).toBeUndefined();
@@ -292,7 +292,7 @@ describe("Dossiê de Falhas do Subsistema de Modelos (Casos de Regressão)", () 
 
     const migrated = await migrateAdminConfigToV2(undefined, prodSnapshot);
     expect(migrated).toBe(true);
-    expect(prodSnapshot.version).toBe(2);
+    expect(prodSnapshot.version).toBe(3);
 
     // Todos os 5 provedores duplicados foram eliminados
     expect(Object.keys(prodSnapshot.customProviders).length).toBe(0);
