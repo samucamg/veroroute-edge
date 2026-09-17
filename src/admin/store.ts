@@ -199,6 +199,20 @@ export async function migrateAdminConfigToV2(
   env: EnvBindings | undefined,
   cfg: AdminConfig
 ): Promise<boolean> {
+  // =========================================================================
+  // ⚠️  CONTRATO ARQUITETURAL — NÃO VIOLAR JAMAIS:
+  //
+  // Esta função é chamada DENTRO de getAdminConfig(), que por sua vez é
+  // chamada dentro de mutateAdminConfig(). Por isso, ela NÃO pode chamar:
+  //   - mutateAdminConfig()
+  //   - getAdminConfig()
+  //   - appendProviderKeys() / appendProviderCredentials()
+  //   - setStoredProviderCredentials() / setCustomProviderKeys()
+  //   - qualquer outra função que internamente chame mutateAdminConfig()
+  //
+  // Para persistir dados no KV durante a migração, use kv.put() DIRETAMENTE.
+  // Violar este contrato causa recursão infinita → timeout 504 no Worker.
+  // =========================================================================
   if (cfg.version && cfg.version >= 2) {
     return false;
   }
@@ -567,9 +581,16 @@ export async function setStoredProviderCredentials(
       kv.put(KV_CUSTOM_KEYS_PREFIX + providerId, Array.from(new Set(unique.map((item) => item.apiKey))).join(",")),
     ]);
   }
-  await mutateAdminConfig(env, (cfg) => {
-    if (cfg.customProviders[providerId]) cfg.customProviders[providerId].apiKeys = unique.map((item) => item.apiKey);
-  });
+  // Sincroniza apiKeys em customProviders apenas se necessário.
+  // Provedores nativos (PROVIDER_REGISTRY) não têm entrada em customProviders,
+  // então o mutateAdminConfig seria um no-op oneroso (~40ms de leitura+escrita no KV).
+  // Verificamos o cache em memória antes de decidir — sem I/O extra.
+  const isCustomProvider = Boolean(cache?.data?.customProviders?.[providerId]);
+  if (isCustomProvider) {
+    await mutateAdminConfig(env, (cfg) => {
+      if (cfg.customProviders[providerId]) cfg.customProviders[providerId].apiKeys = unique.map((item) => item.apiKey);
+    });
+  }
 }
 
 export async function getCustomProviderKeys(env: EnvBindings, providerId: string): Promise<string[]> {
