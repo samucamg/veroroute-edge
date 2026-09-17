@@ -42,15 +42,19 @@ describe("Dossiê de Falhas do Subsistema de Modelos (Casos de Regressão)", () 
   // Falha 3 (Corrigida na Fase 2): Prefixos dinâmicos (nvidia, deepseek, mistral)
   // -------------------------------------------------------------------------
   it("Falha 3: Prefixos como nvidia/ e deepseek/ são reconhecidos dinamicamente", () => {
+    // nvidia/meta/llama-3.3-70b-instruct: prefix=nvidia, sub=meta/llama-3.3-70b-instruct
+    // Catálogo NVIDIA estático: ["meta/llama-3.3-70b-instruct", ...] — sub existe → gateway prefix ✅
     const nvidiaReq: ChatCompletionRequest = {
-      model: "nvidia/meta/llama-3.2-11b-vision-instruct",
+      model: "nvidia/meta/llama-3.3-70b-instruct",
       messages: [{ role: "user", content: "oi" }],
     };
     const nvidiaPlan = resolveCandidates(nvidiaReq);
     expect(nvidiaPlan.candidates.length).toBe(1);
     expect(nvidiaPlan.candidates[0].provider).toBe("nvidia");
-    expect(nvidiaPlan.candidates[0].model).toBe("nvidia/meta/llama-3.2-11b-vision-instruct");
+    expect(nvidiaPlan.candidates[0].model).toBe("nvidia/meta/llama-3.3-70b-instruct");
 
+    // deepseek/deepseek-chat: prefix=deepseek, sub=deepseek-chat
+    // Catálogo DeepSeek: ["deepseek-chat", "deepseek-reasoner"] — sub existe → gateway prefix ✅
     const deepseekReq: ChatCompletionRequest = {
       model: "deepseek/deepseek-chat",
       messages: [{ role: "user", content: "oi" }],
@@ -60,6 +64,62 @@ describe("Dossiê de Falhas do Subsistema de Modelos (Casos de Regressão)", () 
     expect(deepseekPlan.candidates[0].provider).toBe("deepseek");
     expect(deepseekPlan.candidates[0].model).toBe("deepseek/deepseek-chat");
   });
+
+  // -------------------------------------------------------------------------
+  // Fase 2: Colisão de namespace de modelo — corrigida no Step 3 do resolveCandidates
+  // -------------------------------------------------------------------------
+  it("Fase 2: openai/gpt-oss-120b roteia para Groq (não para OpenAI Oficial)", () => {
+    // prefix=openai, sub=gpt-oss-120b NÃO está no catálogo OpenAI (gpt-4o, o1...)
+    // → cai para Step 4 → encontra openai/gpt-oss-120b no catálogo estático da Groq
+    const req: ChatCompletionRequest = {
+      model: "openai/gpt-oss-120b",
+      messages: [{ role: "user", content: "oi" }],
+    };
+    const plan = resolveCandidates(req);
+    expect(plan.candidates.length).toBe(1);
+    expect(plan.candidates[0].provider).toBe("groq");
+    expect(plan.candidates[0].model).toBe("openai/gpt-oss-120b");
+  });
+
+  it("Fase 2: openai/gpt-oss-20b roteia para Groq (não para OpenAI Oficial)", () => {
+    const req: ChatCompletionRequest = {
+      model: "openai/gpt-oss-20b",
+      messages: [{ role: "user", content: "oi" }],
+    };
+    const plan = resolveCandidates(req);
+    expect(plan.candidates.length).toBe(1);
+    expect(plan.candidates[0].provider).toBe("groq");
+    expect(plan.candidates[0].model).toBe("openai/gpt-oss-20b");
+  });
+
+  it("Fase 2: deepseek/deepseek-v4.1-flash roteia para o provedor que o tem no catálogo estático", () => {
+    // deepseek/deepseek-v4.1-flash está no PROVIDER_REGISTRY.pollinations.models (catálogo estático).
+    // Step 3: prefix=deepseek, sub=deepseek-v4.1-flash NÃO está no catálogo DeepSeek oficial
+    // → cai para Step 4 → varre PROVIDER_REGISTRY em ordem → encontra em Pollinations primeiro
+    const req: ChatCompletionRequest = {
+      model: "deepseek/deepseek-v4.1-flash",
+      messages: [{ role: "user", content: "oi" }],
+    };
+    const plan = resolveCandidates(req);
+    expect(plan.candidates.length).toBe(1);
+    // Pollinations tem "deepseek/deepseek-v4.1-flash" no catálogo estático
+    expect(plan.candidates[0].provider).toBe("pollinations");
+    expect(plan.candidates[0].model).toBe("deepseek/deepseek-v4.1-flash");
+  });
+
+
+  it("Fase 2: gateway prefix explícito groq/openai/gpt-oss-120b ainda funciona", () => {
+    // Usuário força Groq explicitamente com dupla barra: prefix=groq, sub=openai/gpt-oss-120b
+    // openai/gpt-oss-120b está no catálogo da Groq → gateway prefix válido
+    const req: ChatCompletionRequest = {
+      model: "groq/openai/gpt-oss-120b",
+      messages: [{ role: "user", content: "oi" }],
+    };
+    const plan = resolveCandidates(req);
+    expect(plan.candidates.length).toBe(1);
+    expect(plan.candidates[0].provider).toBe("groq");
+  });
+
 
   // -------------------------------------------------------------------------
   // Falha 4 (Corrigida na Fase 2): A configuração do painel governa o roteamento

@@ -80,6 +80,14 @@ export function resolveCandidates(
   }
 
   // 3. Prefixo derivado dinamicamente de todos os provedores conhecidos (PROVIDER_REGISTRY + customProviders)
+  //
+  // ⚠️  IMPORTANTE — Distinção entre gateway prefix e namespace de modelo:
+  //   "groq/llama-3.3-70b-versatile" → prefix "groq" é o PROVEDOR (gateway prefix explícito)
+  //   "openai/gpt-oss-120b"          → prefix "openai" é o NAMESPACE do modelo, servido pela Groq
+  //
+  // Para distinguir os dois casos, verificamos se o sub-modelo realmente existe no catálogo do
+  // provedor identificado pelo prefixo. Se não existir, caímos para o Step 4, que varre todos
+  // os catálogos pelo model string completo e encontra o provedor correto.
   if (model.includes("/")) {
     const slashIdx = model.indexOf("/");
     const rawPrefix = model.slice(0, slashIdx);
@@ -92,22 +100,39 @@ export function resolveCandidates(
 
     if (isKnownProvider) {
       const subModel = model.slice(slashIdx + 1);
-      if (isCandidateAllowed(providerId, model, adminCfg) && isCandidateAllowed(providerId, subModel, adminCfg)) {
-        const normalizedModel = providerId === rawPrefix ? model : `${providerId}/${subModel}`;
-        const enriched = enrichModelMetadata(providerId, subModel);
-        return {
-          candidates: [{
-            provider: providerId,
-            model: normalizedModel,
-            weight: 1,
-            priority: 1,
-            cost: enriched.pricing?.input_per_million ?? 0,
-          }],
-        };
+
+      // Construir catálogo completo do provedor (registry + static + customModels + customProvider)
+      const provAllModels = [
+        ...(PROVIDER_REGISTRY[providerId]?.models || []),
+        ...(getStaticCatalog(providerId) || []),
+        ...(adminCfg?.customModels?.[providerId] || []),
+        ...(adminCfg?.customProviders?.[providerId]?.models || []),
+      ];
+
+      // Aceita tanto "groq/llama-3.3-70b" → sub "llama-3.3-70b" quanto "1min/gpt-4o" → full "1min/gpt-4o"
+      const subModelInCatalog = provAllModels.includes(subModel) || provAllModels.includes(model);
+
+      if (subModelInCatalog) {
+        // Gateway prefix explícito: o sub-modelo pertence ao catálogo deste provedor.
+        if (isCandidateAllowed(providerId, model, adminCfg) && isCandidateAllowed(providerId, subModel, adminCfg)) {
+          const normalizedModel = providerId === rawPrefix ? model : `${providerId}/${subModel}`;
+          const enriched = enrichModelMetadata(providerId, subModel);
+          return {
+            candidates: [{
+              provider: providerId,
+              model: normalizedModel,
+              weight: 1,
+              priority: 1,
+              cost: enriched.pricing?.input_per_million ?? 0,
+            }],
+          };
+        }
+        return { candidates: [] };
       }
-      return { candidates: [] };
+      // Sub-modelo NÃO encontrado no catálogo do prefixo → cai para Step 4 (varredura completa)
     }
   }
+
 
   // 4. Modelo sem prefixo: busca em provedores embutidos ativos
   for (const [pId, prov] of Object.entries(PROVIDER_REGISTRY)) {
