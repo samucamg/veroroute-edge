@@ -37,8 +37,8 @@ export async function executeOpenAICompatible(
     const url = useOpenAICompat
       ? `${base}/chat/completions`
       : isStream
-        ? `${base}/models/${cleanModel}:streamGenerateContent?alt=sse&key=${apiKey}`
-        : `${base}/models/${cleanModel}:generateContent?key=${apiKey}`;
+        ? `${base}/models/${cleanModel}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`
+        : `${base}/models/${cleanModel}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
     const geminiBody = formatOpenAIToGemini(request);
 
