@@ -414,6 +414,71 @@ describe("Dossiê de Falhas do Subsistema de Modelos (Casos de Regressão)", () 
     expect(data.models).toEqual(["@cf/modelo-completamente-inedito-2026"]);
     expect(data.ignoredStaticModelsCount).toBe(1);
   });
+
+  // -------------------------------------------------------------------------
+  // Fase 7: Combos automáticos dinâmicos (buildDefaultCombos)
+  // -------------------------------------------------------------------------
+  it("Fase 7: buildDefaultCombos gera omni-free com modelos gratuitos reais", async () => {
+    const { buildDefaultCombos } = await import("@/admin/store");
+    const combos = buildDefaultCombos();
+
+    // omni-free deve existir e ter pelo menos 1 target
+    expect(combos["omni-free"]).toBeDefined();
+    expect(combos["omni-free"].targets.length).toBeGreaterThan(0);
+    expect(combos["omni-free"].strategy).toBe("priority");
+
+    // Todos os targets do omni-free devem ter provider e model definidos
+    for (const t of combos["omni-free"].targets) {
+      expect((t as any).provider).toBeTruthy();
+      expect((t as any).model).toBeTruthy();
+    }
+
+    // Gemini e Groq são provedores gratuitos embutidos — devem aparecer no omni-free
+    const freeProviders = combos["omni-free"].targets.map((t: any) => t.provider);
+    const hasFreeProvider = freeProviders.includes("gemini") || freeProviders.includes("groq") || freeProviders.includes("cloudflare-ai");
+    expect(hasFreeProvider).toBe(true);
+  });
+
+  it("Fase 7: buildDefaultCombos gera omni-best-tools com modelos que suportam tools", async () => {
+    const { buildDefaultCombos } = await import("@/admin/store");
+    const { PROVIDER_REGISTRY } = await import("@/config/providers");
+    const combos = buildDefaultCombos();
+
+    // omni-best-tools deve existir
+    expect(combos["omni-best-tools"]).toBeDefined();
+    expect(combos["omni-best-tools"].targets.length).toBeGreaterThan(0);
+
+    // Cada target deve pertencer a um provedor que declara supportsTools=true
+    for (const t of combos["omni-best-tools"].targets as any[]) {
+      const prov = (PROVIDER_REGISTRY as any)[t.provider];
+      if (prov) {
+        expect(prov.supportsTools).toBe(true);
+      }
+    }
+  });
+
+  it("Fase 7: buildDefaultCombos inclui os combos estáticos omni-code e omni-fast", async () => {
+    const { buildDefaultCombos } = await import("@/admin/store");
+    const combos = buildDefaultCombos();
+
+    expect(combos["omni-code"]).toBeDefined();
+    expect(combos["omni-code"].targets.length).toBe(3);
+
+    expect(combos["omni-fast"]).toBeDefined();
+    expect(combos["omni-fast"].targets.length).toBe(3);
+  });
+
+  it("Fase 7: buildDefaultCombos respeita provedores desabilitados no adminCfg", async () => {
+    const { buildDefaultCombos } = await import("@/admin/store");
+
+    // Desabilitar Gemini — ele não deve aparecer no omni-free
+    const cfgWithGeminiDisabled: any = {
+      providerStates: { gemini: { enabled: false } },
+    };
+    const combos = buildDefaultCombos(cfgWithGeminiDisabled);
+    const freeProviders = combos["omni-free"].targets.map((t: any) => t.provider);
+    expect(freeProviders).not.toContain("gemini");
+  });
 });
 
 

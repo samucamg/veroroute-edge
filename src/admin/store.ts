@@ -1,7 +1,7 @@
 import type { EnvBindings } from "@/types/provider";
 import { ANTIGRAVITY_PUBLIC_CONFIG } from "@/config/constants";
 import { normalizeProviderId } from "@/config/providerAliases";
-import { getStaticCatalog } from "@/config/modelRegistry";
+import { getStaticCatalog, listAllAvailableModels } from "@/config/modelRegistry";
 import { PROVIDER_REGISTRY } from "@/config/providers";
 export interface ProviderCredential {
   apiKey: string;
@@ -97,19 +97,9 @@ export interface AdminConfig {
 // ---------------------------------------------------------------------------
 // Built-in default combos
 // ---------------------------------------------------------------------------
-const DEFAULT_COMBOS: Record<string, ComboConfig> = {
-  "omni-free": {
-    id: "omni-free",
-    name: "Omni Free Tier",
-    description: "Cascata otimizada de provedores gratuitos de alta qualidade",
-    strategy: "priority",
-    targets: [
-      { provider: "gemini", model: "gemini-2.0-flash", priority: 1 },
-      { provider: "cloudflare-ai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", priority: 2 },
-      { provider: "groq", model: "llama-3.3-70b-versatile", priority: 3 },
-    ],
-    enabled: true,
-  },
+
+// Combos estáticos (não dependem dos provedores ativos)
+const STATIC_COMBO_DEFINITIONS: Record<string, ComboConfig> = {
   "omni-code": {
     id: "omni-code",
     name: "Omni Code Specialist",
@@ -135,6 +125,120 @@ const DEFAULT_COMBOS: Record<string, ComboConfig> = {
     enabled: true,
   },
 };
+
+/**
+ * Prioridade de provedores para o combo omni-free.
+ * Ordena provedores gratuitos do melhor ao mais limitado.
+ */
+const PROVIDER_PRIORITY_FREE = [
+  "antigravity",    // Google OAuth — sem custo, alta qualidade
+  "gemini",         // Gemini Direct API — free tier generoso
+  "cloudflare-ai",  // Workers AI — completamente gratuito
+  "groq",           // LPU ultra-rápido — free tier
+  "cerebras",       // Wafer-Scale Engine — free tier
+  "sambanova",      // free tier
+  "openrouter",     // modelos :free
+  "pollinations",   // proxy gratuito
+];
+
+/**
+ * Prioridade de provedores para o combo omni-best-tools.
+ * Ordena provedores com suporte a tools pelo custo-benefício.
+ */
+const PROVIDER_PRIORITY_TOOLS = [
+  "gemini",
+  "antigravity",
+  "openai",
+  "alibaba",
+  "groq",
+  "cerebras",
+  "cloudflare-ai",
+  "openrouter",
+  "1min",
+];
+
+/**
+ * Gera os combos padrão dinâmicos baseados nos provedores e modelos disponíveis.
+ *
+ * - omni-free: todos os modelos com free_tier=true, ordenados por qualidade/prioridade
+ * - omni-best-tools: modelos com supportsTools=true e custo ≤ $1/M ou free
+ * - omni-code: estático (foco em programação)
+ * - omni-fast: estático (foco em latência mínima)
+ *
+ * @param adminCfg Config atual do KV — se omitida, usa apenas os provedores embutidos.
+ */
+export function buildDefaultCombos(adminCfg?: Partial<AdminConfig>): Record<string, ComboConfig> {
+  const allModels = listAllAvailableModels(adminCfg as AdminConfig | undefined);
+
+  // --- omni-free: modelos gratuitos ---
+  const freeModels = allModels
+    .filter((m) => m.pricing?.free_tier === true)
+    .sort((a, b) => {
+      const pa = PROVIDER_PRIORITY_FREE.indexOf(a.providerId);
+      const pb = PROVIDER_PRIORITY_FREE.indexOf(b.providerId);
+      return (pa === -1 ? 999 : pa) - (pb === -1 ? 999 : pb);
+    })
+    .slice(0, 6);
+
+  const freeTargets: ComboTarget[] =
+    freeModels.length > 0
+      ? freeModels.map((m, i) => ({ provider: m.providerId, model: m.modelId, priority: i + 1 }))
+      : [
+          // fallback estático se nenhum provedor estiver configurado
+          { provider: "gemini", model: "gemini-2.0-flash", priority: 1 },
+          { provider: "cloudflare-ai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", priority: 2 },
+          { provider: "groq", model: "llama-3.3-70b-versatile", priority: 3 },
+        ];
+
+  // --- omni-best-tools: modelos com tools + custo baixo ---
+  const toolsModels = allModels
+    .filter(
+      (m) =>
+        m.capabilities?.tools === true &&
+        (m.pricing?.free_tier === true || (m.pricing?.input_per_million ?? 999) <= 1.0),
+    )
+    .sort((a, b) => {
+      const pa = PROVIDER_PRIORITY_TOOLS.indexOf(a.providerId);
+      const pb = PROVIDER_PRIORITY_TOOLS.indexOf(b.providerId);
+      return (pa === -1 ? 999 : pa) - (pb === -1 ? 999 : pb);
+    })
+    .slice(0, 6);
+
+  const toolsTargets: ComboTarget[] =
+    toolsModels.length > 0
+      ? toolsModels.map((m, i) => ({ provider: m.providerId, model: m.modelId, priority: i + 1 }))
+      : [
+          { provider: "gemini", model: "gemini-2.5-flash", priority: 1 },
+          { provider: "groq", model: "llama-3.3-70b-versatile", priority: 2 },
+        ];
+
+  return {
+    "omni-free": {
+      id: "omni-free",
+      name: "Omni Free Tier",
+      description: "Cascata automática de modelos gratuitos de alta qualidade",
+      strategy: "priority",
+      targets: freeTargets,
+      enabled: true,
+    },
+    "omni-best-tools": {
+      id: "omni-best-tools",
+      name: "Omni Best Tools",
+      description: "Modelos com suporte a tools de baixo custo",
+      strategy: "priority",
+      targets: toolsTargets,
+      enabled: true,
+    },
+    ...STATIC_COMBO_DEFINITIONS,
+  };
+}
+
+/**
+ * Snapshot estático dos combos padrão — mantido para compatibilidade com testes
+ * e com o roteador de cascata (que não tem acesso ao KV).
+ * Para o conjunto completo e dinâmico, use buildDefaultCombos(adminCfg).
+ */
+const DEFAULT_COMBOS: Record<string, ComboConfig> = buildDefaultCombos();
 
 // Expose for use in cascade/routes without importing the whole store
 export { DEFAULT_COMBOS };
@@ -181,8 +285,9 @@ function invalidateCache(): void {
  */
 function mergeComos(p: Partial<AdminConfig>): Record<string, ComboConfig> {
   const deleted = new Set<string>(p._deletedDefaultCombos ?? []);
+  const dynamicDefaults = buildDefaultCombos(p);
   const base: Record<string, ComboConfig> = {};
-  for (const [id, cfg] of Object.entries(DEFAULT_COMBOS)) {
+  for (const [id, cfg] of Object.entries(dynamicDefaults)) {
     if (!deleted.has(id)) base[id] = cfg;
   }
   return { ...base, ...(p.combos ?? {}) };

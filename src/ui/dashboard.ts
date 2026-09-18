@@ -874,14 +874,7 @@ curl -X POST https://seu-worker.workers.dev/v1/search \\
           <div>
             <label style="font-size: 0.85rem; color: var(--text-muted);">Modelo / Combo:</label>
             <select id="chat-model">
-              <option value="omni-free">omni-free (Cascata Inteligente Free)</option>
-              <option value="omni-code">omni-code (Programação & 1min.ai)</option>
-              <option value="gemini-2.5-flash">gemini-2.5-flash</option>
-              <option value="1min/gpt-4o">1min.ai (GPT-4o com Tools)</option>
-              <option value="qwen-max">qwen-max (Alibaba DashScope)</option>
-              <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (Groq)</option>
-              <option value="cerebras/llama3.3-70b">cerebras/llama3.3-70b</option>
-              <option value="@cf/meta/llama-3.3-70b-instruct-fp8-fast">Cloudflare Workers AI Llama 70B</option>
+              <option value="">Carregando modelos e combos...</option>
             </select>
           </div>
           <div>
@@ -1713,6 +1706,7 @@ git push origin master
       if (tabId === 'combos') loadCombos();
       else if (tabId === 'antigravity') loadAntigravityStatus();
       else if (tabId === 'admin') loadAdmin();
+      else if (tabId === 'playground') populatePlaygroundModels();
     }
 
     function showToast(msg, type) {
@@ -1980,6 +1974,78 @@ git push origin master
       alert(url
         ? 'URL opcional do SearXNG salva neste navegador.'
         : 'URL removida. As buscas usarão DuckDuckGo gratuitamente, sem URL ou chave.');
+    }
+
+    // ============ PLAYGROUND ============
+    var _playgroundModelsLoaded = false;
+    async function populatePlaygroundModels() {
+      if (_playgroundModelsLoaded) return;
+      const sel = document.getElementById('chat-model');
+      if (!sel) return;
+      try {
+        // 1. Combos (requer auth)
+        var combosData = [];
+        try {
+          var combosRes = await adminFetch('/api/admin/combos');
+          var combosJson = await combosRes.json();
+          combosData = combosJson.combos || [];
+        } catch(_) {}
+
+        // 2. Modelos diretos via /v1/models (público)
+        var directModels = [];
+        try {
+          var tok = getAdminToken();
+          var modelsRes = await fetch('/v1/models', tok ? { headers: { 'Authorization': 'Bearer ' + tok } } : undefined);
+          var modelsJson = await modelsRes.json();
+          directModels = modelsJson.data || [];
+        } catch(_) {}
+
+        sel.innerHTML = '';
+
+        // Grupo 1: Combos
+        if (combosData.length > 0) {
+          var g1 = document.createElement('optgroup');
+          g1.label = '\uD83D\uDD00 Combos (Roteamento Inteligente)';
+          combosData.forEach(function(c) {
+            var o = document.createElement('option');
+            o.value = c.id;
+            o.textContent = c.name && c.name !== c.id ? c.id + ' \u2014 ' + c.name : c.id;
+            g1.appendChild(o);
+          });
+          sel.appendChild(g1);
+        }
+
+        // Grupo 2: Modelos diretos, agrupados por provedor (owned_by)
+        if (directModels.length > 0) {
+          var byProvider = {};
+          directModels.forEach(function(m) {
+            var p = m.owned_by || 'outros';
+            if (!byProvider[p]) byProvider[p] = [];
+            byProvider[p].push(m);
+          });
+          Object.entries(byProvider).forEach(function(entry) {
+            var prov = entry[0], mods = entry[1];
+            var g = document.createElement('optgroup');
+            g.label = '\uD83D\uDCE6 ' + prov;
+            mods.forEach(function(m) {
+              var o = document.createElement('option');
+              o.value = m.id;
+              o.textContent = m.id;
+              g.appendChild(o);
+            });
+            sel.appendChild(g);
+          });
+        }
+
+        // Fallback se tudo falhou
+        if (sel.options.length === 0) {
+          sel.innerHTML = '<option value="omni-free">omni-free (fallback)</option>';
+        }
+
+        _playgroundModelsLoaded = true;
+      } catch(e) {
+        sel.innerHTML = '<option value="omni-free">omni-free (fallback)</option>';
+      }
     }
 
     // ============ ADMINISTRACAO ============
@@ -3543,6 +3609,7 @@ git push origin master
       if (getAdminToken()) {
         loadCombos();
         loadAdmin();
+        populatePlaygroundModels();
       }
     }
   </script>
