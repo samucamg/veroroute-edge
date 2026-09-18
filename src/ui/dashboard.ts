@@ -1142,6 +1142,28 @@ dsh --model combo-super-payload
         </div>
       </div>
 
+      <!-- AUTH TOKEN DO SERVIDOR -->
+      <div class="card">
+        <div class="card-title">🔐 AUTH_TOKEN do Servidor (Persistente)
+          <span id="auth-token-status-badge" style="font-size:0.72rem; font-weight:500; padding:0.15rem 0.55rem; border-radius:99px; margin-left:0.5rem; background:rgba(100,100,120,0.25); color:var(--text-muted); vertical-align:middle;">Verificando...</span>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem; line-height: 1.5;">
+          Defina aqui um token de acesso que <strong>sobrevive a redeploys e sync do fork</strong> do GitHub,
+          sem precisar reconfigurar em <em>Settings → Variables</em> toda vez.
+          O valor salvo no KV tem prioridade sobre o <code>AUTH_TOKEN</code> do <code>wrangler.toml</code>.
+        </p>
+        <div style="display: flex; gap: 0.75rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 0.75rem;">
+          <div style="flex: 1; min-width: 220px;">
+            <label style="font-size:0.82rem; color:var(--text-muted); display:block; margin-bottom:0.3rem;">Novo AUTH_TOKEN (mín. 4 caracteres):</label>
+            <input type="password" id="server-auth-token-input" placeholder="Digite o novo token de acesso..." style="width:100%; font-family:monospace;" oninput="checkAuthTokenStrength(this.value)">
+          </div>
+          <button class="btn" onclick="saveServerAuthToken()" style="white-space:nowrap;">💾 Salvar no KV</button>
+          <button class="btn btn-secondary" onclick="resetServerAuthToken()" style="white-space:nowrap; color:var(--rose); border-color:rgba(244,63,94,0.3);" title="Remove o token do KV e volta ao padrão do wrangler.toml">🗑️ Remover</button>
+        </div>
+        <div id="server-auth-token-strength" style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.5rem;"></div>
+        <div id="server-auth-token-info" style="font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem;"></div>
+      </div>
+
       <!-- CHAVES VIRTUAIS / API MANAGER -->
       <div class="card">
         <div class="card-title">🔑 Gerenciador de Chaves de Clientes (API Manager Light)</div>
@@ -1581,7 +1603,9 @@ dsh --model combo-super-payload
           Suas chaves de provedores, combos e configurações são armazenadas no Cloudflare KV (<code>OMNI_KEYS</code> e <code>OMNI_CACHE</code>). Atualizar o código <strong>NUNCA</strong> apaga suas chaves nem configurações.
         </p>
         <p style="font-size: 0.82rem; color: var(--amber); line-height: 1.5; margin-bottom: 0.6rem;">
-          ⚠️ <strong>Atenção ao <code>AUTH_TOKEN</code>:</strong> o valor padrão <code>admin</code> fica no <code>wrangler.toml</code> para que instalações novas já funcionem. Por isso, cada <strong>Sync fork</strong> ou novo build pode devolver a variável para <code>admin</code> e substituir a senha que você definiu. Depois de atualizar, abra Settings → Variables and Secrets, confira o <code>AUTH_TOKEN</code>, salve novamente sua senha e clique em Deploy.
+          ⚠️ <strong>Dica pós-atualização:</strong> Se você configurou um AUTH_TOKEN via painel (card acima, aba Admin),
+          ele está salvo no KV e <strong>não será perdido</strong> no próximo Sync fork ou redeploy.
+          Caso nunca tenha configurado, o valor padrão <code>admin</code> do <code>wrangler.toml</code> será usado.
         </p>
         <div style="font-size: 0.82rem; color: var(--primary); font-weight: 600; margin-bottom: 0.35rem;">Opção 1: Via GitHub "Sync Fork" (Mais Fácil / Sem Comandos)</div>
         <p style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 0.75rem;">
@@ -1834,6 +1858,7 @@ git push origin master
 
       loadAdmin();
       loadCombos();
+      loadAuthTokenStatus();
     }
 
     function ensureAdminToken() {
@@ -1976,7 +2001,84 @@ git push origin master
         : 'URL removida. As buscas usarão DuckDuckGo gratuitamente, sem URL ou chave.');
     }
 
+    // ============ AUTH TOKEN DO SERVIDOR ============
+    async function loadAuthTokenStatus() {
+      const badge = document.getElementById('auth-token-status-badge');
+      const info = document.getElementById('server-auth-token-info');
+      if (!badge) return;
+      try {
+        const res = await adminFetch('/api/admin/settings/auth-token');
+        const data = await res.json();
+        if (data.hasCustomToken) {
+          badge.style.background = 'rgba(16,185,129,0.18)';
+          badge.style.color = 'var(--emerald)';
+          badge.innerText = '\u2705 Token KV ativo: ' + (data.preview || '****');
+          if (info) info.innerText = 'Token personalizado salvo no KV. Sobreviverá ao próximo redeploy.';
+        } else {
+          badge.style.background = 'rgba(245,158,11,0.15)';
+          badge.style.color = 'var(--amber)';
+          badge.innerText = '\u26a0\ufe0f Usando padrão do wrangler.toml';
+          if (info) info.innerText = 'Nenhum token customizado salvo. Defina um acima para que ele sobreviva a redeploys.';
+        }
+      } catch(e) {
+        badge.innerText = 'Sem KV';
+      }
+    }
+
+    function checkAuthTokenStrength(val) {
+      const el = document.getElementById('server-auth-token-strength');
+      if (!el) return;
+      if (!val) { el.innerText = ''; return; }
+      if (val.length < 4) { el.style.color = 'var(--rose)'; el.innerText = '\u274c Muito curto (mínimo 4 caracteres)'; return; }
+      if (val.length < 8) { el.style.color = 'var(--amber)'; el.innerText = '\u26a0\ufe0f Fraco — considere algo maior'; return; }
+      if (val.length >= 16 || /[^a-z0-9]/i.test(val)) { el.style.color = 'var(--emerald)'; el.innerText = '\u2705 Forte'; return; }
+      el.style.color = 'var(--primary)'; el.innerText = '\ud83d\udd10 Razoável';
+    }
+
+    async function saveServerAuthToken() {
+      const input = document.getElementById('server-auth-token-input');
+      const val = input.value.trim();
+      if (!val || val.length < 4) {
+        showToast('Token muito curto — mínimo 4 caracteres.', 'error');
+        return;
+      }
+      try {
+        const res = await adminFetch('/api/admin/settings/auth-token', {
+          method: 'PUT',
+          body: JSON.stringify({ token: val })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          // Atualiza o token no localStorage para a sessão atual não quebrar
+          setAdminToken(val, Boolean(localStorage.getItem('veroroute_admin_token_remember')));
+          showToast('\u2705 AUTH_TOKEN salvo no KV! (' + (data.preview || '****') + '). Redeploys não afetarão mais.', 'success');
+          input.value = '';
+          document.getElementById('server-auth-token-strength').innerText = '';
+          loadAuthTokenStatus();
+        } else {
+          showToast('Erro: ' + (data.error?.message || JSON.stringify(data.error) || 'Desconhecido'), 'error');
+        }
+      } catch(e) {
+        showToast('Erro de rede: ' + e.message, 'error');
+      }
+    }
+
+    async function resetServerAuthToken() {
+      if (!confirm('Remover o token customizado do KV? O sistema voltará a usar o valor do wrangler.toml (\"admin\" por padrão).')) return;
+      try {
+        const res = await adminFetch('/api/admin/settings/auth-token', { method: 'DELETE' });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('\u26a0\ufe0f Token KV removido. Sistema usa o wrangler.toml novamente.', 'info');
+          loadAuthTokenStatus();
+        }
+      } catch(e) {
+        showToast('Erro: ' + e.message, 'error');
+      }
+    }
+
     // ============ PLAYGROUND ============
+
     var _playgroundModelsLoaded = false;
     async function populatePlaygroundModels() {
       if (_playgroundModelsLoaded) return;
@@ -2120,6 +2222,7 @@ git push origin master
       loadPresets();
       loadSearchConfig();
       loadVirtualKeys();
+      loadAuthTokenStatus();
     }
 
     function renderAdminProviders(providers) {

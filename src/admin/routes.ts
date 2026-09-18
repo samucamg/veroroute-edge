@@ -977,7 +977,52 @@ adminRouter.post("/antigravity/config", async (c) => {
   return c.json({ ok: true, message: "Credenciais salvas no KV OMNI_KEYS.", configuredAt: cfg.antigravityConfig?.updatedAt });
 });
 
-export default adminRouter;
+// ---------------------------------------------------------------------------
+// AUTH_TOKEN persistido no KV (sobrevive a redeploys / GitHub Sync)
+// ---------------------------------------------------------------------------
+
+/** Retorna se h\u00e1 um token customizado salvo, sem expor o valor. */
+adminRouter.get("/settings/auth-token", async (c) => {
+  const cfg = await getAdminConfig(c.env);
+  const hasCustomToken = Boolean(cfg.authToken && cfg.authToken.trim());
+  return c.json({
+    ok: true,
+    hasCustomToken,
+    preview: hasCustomToken ? maskSecret(cfg.authToken!) : null,
+  });
+});
+
+/**
+ * Salva um AUTH_TOKEN customizado no KV.
+ * A partir desse momento, o token do KV tem prioridade sobre o wrangler.toml
+ * e sobrevive a qualquer redeploy ou sync do fork.
+ *
+ * Body: { token: string }
+ * Resposta: { ok: true, preview: string }  (preview mascarado para confirma\u00e7\u00e3o)
+ */
+adminRouter.put("/settings/auth-token", async (c) => {
+  const body = (await c.req.json()) as { token: string };
+  const token = body.token?.trim();
+  if (!token || token.length < 4) {
+    return c.json(
+      { error: { message: "O token deve ter pelo menos 4 caracteres.", type: "validation" } },
+      400
+    );
+  }
+  await mutateAdminConfig(c.env, (cfg) => {
+    cfg.authToken = token;
+  });
+  return c.json({ ok: true, preview: maskSecret(token) });
+});
+
+/** Remove o token customizado do KV, voltando ao valor do wrangler.toml. */
+adminRouter.delete("/settings/auth-token", async (c) => {
+  await mutateAdminConfig(c.env, (cfg) => {
+    delete cfg.authToken;
+  });
+  return c.json({ ok: true, message: "Token customizado removido. Sistema usa o valor do wrangler.toml." });
+});
+
 
 // Phase C: usage stats
 adminRouter.get("/usage/:keyId", async (c) => {
@@ -992,3 +1037,5 @@ adminRouter.get("/circuits", async (c) => {
   const results = await Promise.all(providers.map(async (p) => ({ provider: p, ...(await getCircuitStatus(c.env, p)) })));
   return c.json({ circuits: results });
 });
+
+export default adminRouter;

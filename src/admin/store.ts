@@ -92,6 +92,13 @@ export interface AdminConfig {
   combos: Record<string, ComboConfig>;
   antigravityConfig?: AntigravityOAuthConfig;
   providerBaseUrls?: Record<string, string>;
+  /**
+   * AUTH_TOKEN persistido no KV pelo usuário via painel.
+   * Quando presente, sobrescreve o valor do wrangler.toml [vars],
+   * sobrevivendo a redeploys e sync do fork do GitHub.
+   * Quando ausente, o sistema cai para c.env.AUTH_TOKEN (padrão "admin").
+   */
+  authToken?: string;
 }
 
 // ---------------------------------------------------------------------------

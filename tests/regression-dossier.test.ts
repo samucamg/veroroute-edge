@@ -479,7 +479,101 @@ describe("Dossiê de Falhas do Subsistema de Modelos (Casos de Regressão)", () 
     const freeProviders = combos["omni-free"].targets.map((t: any) => t.provider);
     expect(freeProviders).not.toContain("gemini");
   });
+
+  // -------------------------------------------------------------------------
+  // Fase 8: Persistência do AUTH_TOKEN no KV — prioridade sobre wrangler.toml
+  // Garante que o token salvo no KV NUNCA é sobrescrito por redeploy ou sync
+  // -------------------------------------------------------------------------
+  describe("Fase 8: Persistência do AUTH_TOKEN (KV vs wrangler.toml)", () => {
+    let resolvePrincipal: Awaited<typeof import("@/admin/auth")>["resolvePrincipal"];
+    beforeEach(async () => {
+      // Reseta o cache de módulo (store.ts possui let cache = null em nível de módulo
+      // com TTL de 5s — sem o reset, testes subsequentes reutilizam o cache do anterior)
+      vi.resetModules();
+      ({ resolvePrincipal } = await import("@/admin/auth"));
+    });
+
+    /** Cria um env-like com KV vazio e AUTH_TOKEN fixo no wrangler.toml */
+    function makeEnv(kvAuthToken: string | null, wranglerToken: string): any {
+      const kvData: Record<string, string> = {};
+      if (kvAuthToken !== null) {
+        // Simula um AdminConfig serializado contendo authToken
+        kvData["admin:config"] = JSON.stringify({
+          version: 3,
+          _seq: 1,
+          _deletedDefaultCombos: [],
+          providerStates: {},
+          customProviders: {},
+          modelStates: {},
+          customModels: {},
+          removedModels: {},
+          searchConfig: { activeProvider: "auto" },
+          virtualKeys: {},
+          combos: {},
+          authToken: kvAuthToken,
+        });
+      }
+      return {
+        AUTH_TOKEN: wranglerToken,
+        OMNI_KEYS: {
+          get: async (key: string) => kvData[key] ?? null,
+          put: async () => {},
+          delete: async () => {},
+        },
+        OMNI_CACHE: {
+          get: async () => null,
+          put: async () => {},
+        },
+      };
+    }
+
+    it("8.1: Token no KV tem precedência absoluta sobre AUTH_TOKEN do wrangler.toml", async () => {
+      const env = makeEnv("minha-senha-personalizada", "admin");
+      // Ctx mínimo compatível com resolvePrincipal
+      const ctx = {
+        env,
+        req: { header: () => "Bearer minha-senha-personalizada", query: () => undefined },
+      } as any;
+
+      const principal = await resolvePrincipal(ctx, "minha-senha-personalizada");
+      expect(principal).not.toBeNull();
+      expect(principal?.kind).toBe("master");
+    });
+
+    it("8.2: Token padrão do wrangler.toml NÃO funciona quando o KV tem um token diferente", async () => {
+      const env = makeEnv("minha-senha-personalizada", "admin");
+      const ctx = {
+        env,
+        req: { header: () => "Bearer admin", query: () => undefined },
+      } as any;
+
+      // "admin" é o token do wrangler.toml — mas o KV sobrescreve com outro valor
+      const principal = await resolvePrincipal(ctx, "admin");
+      expect(principal).toBeNull(); // deve rejeitar o token antigo
+    });
+
+    it("8.3: Fallback correto para wrangler.toml quando KV NÃO tem authToken", async () => {
+      const env = makeEnv(null, "admin"); // KV sem authToken
+      const ctx = {
+        env,
+        req: { header: () => "Bearer admin", query: () => undefined },
+      } as any;
+
+      const principal = await resolvePrincipal(ctx, "admin");
+      expect(principal).not.toBeNull();
+      expect(principal?.kind).toBe("master");
+    });
+
+    it("8.4: Token do KV vazio/whitespace ignora o campo e usa wrangler.toml", async () => {
+      const env = makeEnv("   ", "admin"); // authToken só com espaços — deve ser ignorado
+      const ctx = {
+        env,
+        req: { header: () => "Bearer admin", query: () => undefined },
+      } as any;
+
+      const principal = await resolvePrincipal(ctx, "admin");
+      expect(principal).not.toBeNull();
+      expect(principal?.kind).toBe("master");
+    });
+  });
 });
-
-
-

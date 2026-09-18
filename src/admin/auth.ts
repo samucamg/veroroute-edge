@@ -2,9 +2,10 @@ import type { Context } from "hono";
 import { getAdminConfig } from "./store";
 import type { EnvBindings } from "@/types/provider";
 
-// AUTH_TOKEN is configured by wrangler.toml for fresh installations.
-// Cloudflare Git builds can re-apply the default value from [vars], so users
-// who chose a custom password must review it after each Sync fork/rebuild.
+// AUTH_TOKEN resolution order:
+//   1. cfg.authToken stored in Cloudflare KV (set via admin panel)  — survives redeploys
+//   2. c.env.AUTH_TOKEN from wrangler.toml [vars]                   — default "admin" on fresh install
+// This ensures a custom password configured by the user is never reset by a GitHub Sync/fork rebuild.
 
 export type AuthPrincipal =
   | { kind: "master"; id: "master" }
@@ -26,7 +27,10 @@ export async function resolvePrincipal(
   c: AnyCtx,
   token: string
 ): Promise<AuthPrincipal | null> {
-  const master = c.env.AUTH_TOKEN;
+  // KV-stored token takes precedence; falls back to wrangler.toml env var.
+  // getAdminConfig has a 5-second in-memory cache, so KV is not hit on every request.
+  const cfg = await getAdminConfig(c.env);
+  const master = (cfg.authToken && cfg.authToken.trim()) || c.env.AUTH_TOKEN;
   if (!master) return null;
 
   if (token && token === master) {
