@@ -1,7 +1,7 @@
 import { enrichModelMetadata, getStaticCatalog } from "@/config/modelRegistry";
 import { executeAntigravityRequest } from "@/adapters/antigravity";
 import { executeCloudflareAI } from "@/adapters/cloudflare-ai";
-import { executeOneMinAI } from "@/adapters/onemin";
+// Adapter 1min.ai removido: usar provedor customizado genérico compatível com OpenAI via painel admin.
 import { executeOpenAICompatible } from "@/adapters/openai-compatible";
 import { getValidAntigravityAccessToken } from "@/oauth/antigravity";
 import { markKeyRateLimited, selectActiveCredential } from "./keyPool";
@@ -109,11 +109,15 @@ export function resolveCandidates(
         ...(adminCfg?.customProviders?.[providerId]?.models || []),
       ];
 
-      // Aceita tanto "groq/llama-3.3-70b" → sub "llama-3.3-70b" quanto "1min/gpt-4o" → full "1min/gpt-4o"
-      const subModelInCatalog = provAllModels.includes(subModel) || provAllModels.includes(model);
+      // Provedores customizados gen\u00e9ricos: aceitar qualquer sub-modelo explicitamente prefixado,
+      // pois o endpoint OpenAI-compat vai processar o modelo diretamente. N\u00e3o exigimos cat\u00e1logo local.
+      const isCustomGenericProvider = Boolean(adminCfg?.customProviders?.[providerId]) && !PROVIDER_REGISTRY[providerId];
+
+      // Aceita tanto "groq/llama-3.3-70b" \u2192 sub "llama-3.3-70b" quanto modelos no cat\u00e1logo completo
+      const subModelInCatalog = isCustomGenericProvider || provAllModels.includes(subModel) || provAllModels.includes(model);
 
       if (subModelInCatalog) {
-        // Gateway prefix explícito: o sub-modelo pertence ao catálogo deste provedor.
+        // Gateway prefix expl\u00edcito: o sub-modelo pertence ao cat\u00e1logo deste provedor.
         if (isCandidateAllowed(providerId, model, adminCfg) && isCandidateAllowed(providerId, subModel, adminCfg)) {
           const normalizedModel = providerId === rawPrefix ? model : `${providerId}/${subModel}`;
           const enriched = enrichModelMetadata(providerId, subModel);
@@ -129,7 +133,7 @@ export function resolveCandidates(
         }
         return { candidates: [] };
       }
-      // Sub-modelo NÃO encontrado no catálogo do prefixo → cai para Step 4 (varredura completa)
+      // Sub-modelo N\u00c3O encontrado no cat\u00e1logo do prefixo \u2192 cai para Step 4 (varredura completa)
     }
   }
 
@@ -280,7 +284,14 @@ export async function dispatchWithCascade(
       try {
         const credential = await selectActiveCredential(env, candidate.provider);
         const apiKey = credential.apiKey;
-        const customBaseUrl = adminCfg.providerBaseUrls?.[candidate.provider] || (candidate.provider === "azure" ? env.AZURE_OPENAI_ENDPOINT : undefined);
+        // Ordem de precedência para baseUrl:
+        // 1. Override manual via providerBaseUrls (admin UI)
+        // 2. baseUrl declarada no próprio customProvider (campo obrigatório ao cadastrar)
+        // 3. Fallback especial para Azure via env var
+        const customBaseUrl =
+          adminCfg.providerBaseUrls?.[candidate.provider] ||
+          adminCfg.customProviders?.[candidate.provider]?.baseUrl ||
+          (candidate.provider === "azure" ? env.AZURE_OPENAI_ENDPOINT : undefined);
 
         let response: Response;
         try {
@@ -293,10 +304,11 @@ export async function dispatchWithCascade(
               if (!antigravResult?.accessToken) throw new Error("Antigravity: no valid access token");
               return executeAntigravityRequest(outbound, antigravResult.accessToken, antigravResult.projectId || "", candidate.model);
             }
-            if (candidate.provider === "1min") {
-              return executeOneMinAI(outbound, apiKey, candidate.model, customBaseUrl);
-            }
-            return executeOpenAICompatible(outbound, candidate.provider, apiKey, candidate.model, customBaseUrl);
+            // Para provedores customizados genéricos, ler o protocolo declarado no admin
+            // ("anthropic" ou "openai") e passar para o adapter de forma que ele use
+            // o header correto (x-api-key + anthropic-version vs Authorization: Bearer)
+            const customProtocol = adminCfg.customProviders?.[candidate.provider]?.protocol;
+            return executeOpenAICompatible(outbound, candidate.provider, apiKey, candidate.model, customBaseUrl, customProtocol);
           }, candidateTimeout);
         } catch (err) {
           if (err instanceof UpstreamTimeout) {

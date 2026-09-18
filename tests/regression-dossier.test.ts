@@ -164,11 +164,16 @@ describe("Dossiê de Falhas do Subsistema de Modelos (Casos de Regressão)", () 
   // -------------------------------------------------------------------------
   // Fase 3: discoverModels unificado e discoverySupported explícito
   // -------------------------------------------------------------------------
-  it("Fase 3: discoverModels declara discoverySupported: false para 1min e cloudflare-ai", async () => {
+  it("Fase 3: discoverModels declara discoverySupported: false para cloudflare-ai; 1min é provedor customizado", async () => {
+    // 1min.ai foi removido do PROVIDER_REGISTRY — não tem mais catálogo nativo.
+    // Ele deve ser cadastrado como provedor customizado no painel admin
+    // apontando para https://1min--com-tool.samuca.workers.dev/v1 (Worker OpenAI-compat)
     const oneMinRes = await discoverModels("1min");
+    // Sem catálogo estático, retorna lista vazia; discoverySupported false (sem endpoint /models nativo)
     expect(oneMinRes.discoverySupported).toBe(false);
-    expect(oneMinRes.models.length).toBeGreaterThan(0);
     expect(oneMinRes.source).toBe("catalog");
+    // models pode ser vazio agora que foi removido do catálogo estático — isso é esperado
+    expect(Array.isArray(oneMinRes.models)).toBe(true);
 
     const cfRes = await discoverModels("cloudflare-ai");
     expect(cfRes.discoverySupported).toBe(false);

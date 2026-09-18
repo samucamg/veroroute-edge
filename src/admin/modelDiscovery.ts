@@ -247,16 +247,6 @@ export async function discoverModels(
   const baseUrl = stripTrailingSlashes(credentials.baseUrl || "");
 
   // 1. Provedores sem suporte a listagem dinâmica upstream
-  if (id === "1min") {
-    return {
-      models: getStaticCatalog("1min"),
-      error: null,
-      source: "catalog",
-      discoverySupported: false,
-      attempts: ["1min.ai não possui endpoint de listagem (/models). Catálogo estático utilizado."],
-    };
-  }
-
   if (id === "cloudflare-ai" || baseUrl === "workers-ai") {
     return {
       models: getStaticCatalog("cloudflare-ai"),
@@ -452,6 +442,46 @@ export async function discoverModels(
       return {
         models: getStaticCatalog("openrouter"),
         error: err?.name === "AbortError" ? "Timeout ao consultar OpenRouter (8s)" : (err?.message || String(err)),
+        source: "catalog",
+        discoverySupported: true,
+      };
+    }
+  }
+
+  // 5.1 DeepSeek Official API (GET https://api.deepseek.com/models)
+  if (id === "deepseek") {
+    const url = "https://api.deepseek.com/models";
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+    try {
+      const res = await fetch(url, { headers, signal: controller.signal });
+      clearTimeout(timer);
+      if (res.ok) {
+        const json: any = await res.json().catch(() => ({}));
+        const models = extractModelIds(json);
+        if (models.length > 0) {
+          return {
+            models,
+            error: null,
+            source: "upstream",
+            discoverySupported: true,
+          };
+        }
+      }
+      return {
+        models: getStaticCatalog("deepseek"),
+        error: apiKey ? `DeepSeek HTTP ${res.status}` : "Informe sua chave DeepSeek para listar os modelos da conta",
+        source: "catalog",
+        discoverySupported: true,
+      };
+    } catch (err: any) {
+      clearTimeout(timer);
+      return {
+        models: getStaticCatalog("deepseek"),
+        error: err?.name === "AbortError" ? "Timeout ao consultar DeepSeek (8s)" : (err?.message || String(err)),
         source: "catalog",
         discoverySupported: true,
       };

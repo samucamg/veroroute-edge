@@ -720,8 +720,11 @@ export async function setStoredProviderCredentials(
   if (!kv) {
     inMemoryCredentials[providerId] = unique;
   } else if (unique.length === 0) {
+    // Limpar todas as chaves: apagar do KV + zerar cache em memória imediatamente
+    inMemoryCredentials[providerId] = [];
     await Promise.all([kv.delete("credentials_" + providerId), kv.delete(KV_CUSTOM_KEYS_PREFIX + providerId)]);
   } else {
+    inMemoryCredentials[providerId] = unique;
     await Promise.all([
       kv.put("credentials_" + providerId, JSON.stringify(unique)),
       kv.put(KV_CUSTOM_KEYS_PREFIX + providerId, Array.from(new Set(unique.map((item) => item.apiKey))).join(",")),
@@ -736,6 +739,10 @@ export async function setStoredProviderCredentials(
     await mutateAdminConfig(env, (cfg) => {
       if (cfg.customProviders[providerId]) cfg.customProviders[providerId].apiKeys = unique.map((item) => item.apiKey);
     });
+  } else {
+    // Para provedores nativos, invalidar o cache de adminConfig para forçar releitura
+    // e garantir que a UI reflita a mudança imediatamente (sem esperar TTL de 5s)
+    invalidateCache();
   }
 }
 

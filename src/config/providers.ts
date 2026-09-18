@@ -150,20 +150,11 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     supportsTools: false,
     supportsVision: false,
   },
-  "1min": {
-    id: "1min",
-    name: "1min.ai (com ReAct Tool Calling)",
-    baseUrl: "https://api.1min.ai/api/chat-with-ai",
-    authType: "apikey-header",
-    headerName: "API-KEY",
-    models: ["1min/gpt-4o", "1min/claude-3-5-sonnet", "1min/gemini-2.0-flash"],
-    freeTier: true,
-    costPerMillionInput: 0,
-    costPerMillionOutput: 0,
-    supportsStreaming: true,
-    supportsTools: false,
-    supportsVision: true,
-  },
+  // 1min.ai foi removido do catálogo nativo.
+  // Cadastre-o como provedor customizado no painel admin com:
+  //   baseUrl: https://1min--com-tool.samuca.workers.dev/v1  (ou outro endpoint compatível com OpenAI)
+  //   protocol: openai
+  // O sistema roteia automaticamente para qualquer endpoint OpenAI/Anthropic-compatible.
   freeapikey: {
     id: "freeapikey",
     name: "FreeAPIKey (Agregador)",
@@ -239,8 +230,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     name: "DeepSeek API",
     baseUrl: "https://api.deepseek.com/v1",
     authType: "bearer",
-    // A DeepSeek aceita apenas deepseek-flash e deepseek-v4-pro (confirmado na API).
-    models: ["deepseek-flash", "deepseek-v4-pro"],
+    models: ["deepseek-chat", "deepseek-reasoner", "deepseek-flash", "deepseek-v4-pro"],
     freeTier: false,
     costPerMillionInput: 0.14,
     costPerMillionOutput: 0.28,

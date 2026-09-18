@@ -465,20 +465,6 @@ export async function executeDirectProviderTest(
         };
       }
       resPromise = executeAntigravityRequest(testReq, antigravResult.accessToken, antigravResult.projectId || "", model);
-    } else if (providerId === "1min") {
-      if (!apiKey) {
-        return {
-          provider: providerId,
-          model,
-          status: 401,
-          latency_ms: 0,
-          success: false,
-          error: "Sem chave de API para 1min.ai",
-          classification: "sem_acesso",
-        };
-      }
-      const { executeOneMinAI } = await import("@/adapters/onemin");
-      resPromise = executeOneMinAI(testReq, apiKey, model, overrideBaseUrl);
     } else {
       if (!apiKey && providerId !== "pollinations" && providerId !== "freeapikey") {
         return {
@@ -491,7 +477,10 @@ export async function executeDirectProviderTest(
           classification: "sem_acesso",
         };
       }
-      resPromise = executeOpenAICompatible(testReq, providerId, apiKey, model, overrideBaseUrl);
+      // Para provedores customizados, ler o protocolo (openai / anthropic) declarado no admin
+      const adminCfg = await getAdminConfig(env);
+      const customProtocol = adminCfg.customProviders?.[providerId]?.protocol;
+      resPromise = executeOpenAICompatible(testReq, providerId, apiKey, model, overrideBaseUrl, customProtocol);
     }
 
     let res = (await Promise.race([

@@ -64,26 +64,7 @@ export const STATIC_PROVIDER_CATALOGS: Record<string, string[]> = {
     "claude-sonnet-4-6",
     "gpt-oss-120b-medium",
   ],
-  "1min": [
-    "gpt-4o",
-    "gpt-4o-mini",
-    "o1",
-    "o1-mini",
-    "o3-mini",
-    "claude-3-7-sonnet",
-    "claude-3-5-sonnet",
-    "claude-3-5-haiku",
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-pro",
-    "gemini-1.5-flash",
-    "command-r-plus",
-    "command-r",
-    "mistral-large",
-    "mistral-large-2",
-    "qwen-2.5-72b-instruct",
-  ],
+  // 1min: removido do catálogo nativo — cadastrar como provedor customizado no painel admin
   gemini: [
     "gemini-2.5-pro",
     "gemini-2.5-flash",
@@ -161,6 +142,8 @@ export const STATIC_PROVIDER_CATALOGS: Record<string, string[]> = {
   deepseek: [
     "deepseek-chat",
     "deepseek-reasoner",
+    "deepseek-flash",
+    "deepseek-v4-pro",
   ],
   mistral: [
     "mistral-large-latest",

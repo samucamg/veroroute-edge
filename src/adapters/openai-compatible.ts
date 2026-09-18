@@ -11,18 +11,21 @@ export async function executeOpenAICompatible(
   providerId: string,
   apiKey: string,
   modelName: string,
-  overrideBaseUrl?: string
+  overrideBaseUrl?: string,
+  overrideProtocol?: string
 ): Promise<Response> {
   const provider = getProviderConfig(providerId);
-  if (!provider) {
-    throw new Error(`Provedor desconhecido: ${providerId}`);
+  // Provedores customizados genéricos (não registrados em PROVIDER_REGISTRY) são válidos
+  // desde que um overrideBaseUrl seja fornecido. Não lançamos erro nesse caso.
+  if (!provider && !overrideBaseUrl) {
+    throw new Error(`Provedor desconhecido e sem baseUrl configurado: ${providerId}`);
   }
 
   // --- Caso Especial: Google Gemini REST API ---
   if (providerId === "gemini") {
     const isStream = request.stream ?? false;
     const cleanModel = modelName.replace("gemini/", "");
-    const nativeBase = (overrideBaseUrl || provider.baseUrl || "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/, "");
+    const nativeBase = (overrideBaseUrl || provider?.baseUrl || "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/, "");
 
     // A superfície depende da credencial: chaves "AQ.…" do AI Studio só são
     // autenticadas na camada compatível com OpenAI (Bearer); chaves "AIza…"
@@ -165,6 +168,16 @@ export async function executeOpenAICompatible(
     headers["X-Title"] = "OmniRoute Serverless";
   }
 
+  // Suporte a provedores com protocolo Anthropic (customizados ou nativos)
+  const effectiveProtocol = overrideProtocol || (provider as any)?.protocol || (provider as any)?.authType || "bearer";
+  const isAnthropicProtocol = effectiveProtocol === "anthropic";
+  if (isAnthropicProtocol) {
+    // Anthropic-compatible: x-api-key header + anthropic-version
+    headers["x-api-key"] = apiKey;
+    headers["anthropic-version"] = "2023-06-01";
+    delete headers["Authorization"];
+  }
+
   // Prefixo de provedor do gateway (ex.: "groq/llama-3.3-70b-versatile")
   // deve ser removido, mas ids nativos que usam namespace precisam ser
   // preservados: Groq usa "openai/gpt-oss-20b", Nvidia usa "meta/llama..." e OpenRouter usa "deepseek/deepseek-v4.1-flash".
@@ -176,8 +189,11 @@ export async function executeOpenAICompatible(
     targetModel = targetModel.slice(providerPrefix.length + 1) || targetModel;
   }
 
-  const rawBase = (overrideBaseUrl || provider.baseUrl || "").replace(/\/+$/, "");
+  const rawBase = (overrideBaseUrl || provider?.baseUrl || "").replace(/\/+$/, "");
   let endpoint = `${rawBase}/chat/completions`;
+  if (!rawBase) {
+    throw new Error(`Provedor ${providerId} não tem baseUrl configurado`);
+  }
   if (providerId === "azure") {
     const cleanAzureBase = rawBase;
     const apiVersion = "2024-02-15-preview";
