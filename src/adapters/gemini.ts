@@ -5,29 +5,8 @@ import type {
   ChatMessage,
 } from "@/types/openai";
 
-/**
- * Placeholders internos (model_enum) usados pelo Cloud Code Assist.
- * Mesma tabela do language_server/Account Switcher oficiais.
- */
-const ANTIGRAVITY_MODEL_PLACEHOLDERS: Record<string, string> = {
-  "gemini-3.8-flash-high": "MODEL_PLACEHOLDER_M318",
-  "gemini-3.8-flash-medium": "MODEL_PLACEHOLDER_M319",
-  "gemini-3.8-flash-low": "MODEL_PLACEHOLDER_M320",
-  "gemini-3.8-flash-tiered": "MODEL_PLACEHOLDER_M322",
-  "gemini-3.7-flash-high": "MODEL_PLACEHOLDER_M298",
-  "gemini-3.7-flash-medium": "MODEL_PLACEHOLDER_M299",
-  "gemini-3.7-flash-low": "MODEL_PLACEHOLDER_M300",
-  "gemini-3.7-flash-tiered": "MODEL_PLACEHOLDER_M301",
-  "gemini-3.6-flash-high": "MODEL_PLACEHOLDER_M71",
-  "gemini-3.6-flash-medium": "MODEL_PLACEHOLDER_M72",
-  "gemini-3.6-flash-low": "MODEL_PLACEHOLDER_M73",
-  "gemini-pro-agent": "MODEL_PLACEHOLDER_M16",
-  "gemini-3.1-pro-low": "MODEL_PLACEHOLDER_M36",
-  "gemini-3.1-flash-lite": "MODEL_PLACEHOLDER_M50",
-  "claude-opus-4-6-thinking": "MODEL_PLACEHOLDER_M26",
-  "claude-sonnet-4-6": "MODEL_PLACEHOLDER_M35",
-  "gpt-oss-120b-medium": "MODEL_OPENAI_GPT_OSS_120B_MEDIUM",
-};
+
+
 
 /**
  * Converte mensagens do padrão OpenAI para o formato Google Gemini (contents + systemInstruction)
@@ -113,18 +92,10 @@ export function formatOpenAIToGemini(request: ChatCompletionRequest): Record<str
     };
   }
 
-  // Cloud Code Assist valida estes metadados internos para alguns modelos
-  // Gemini/Claude expostos pelo catálogo (o IDE oficial sempre os envia).
-  // model_enum só é enviado quando o modelo tem placeholder conhecido: mandar
-  // o placeholder de outro modelo faz o upstream responder 400.
-  const labels: Record<string, string> = {
-    used_claude: "false",
-    used_claude_conservative: "false",
-    used_non_gemini_model: "false",
-  };
-  const placeholder = ANTIGRAVITY_MODEL_PLACEHOLDERS[request.model?.replace(/^(agy|antigravity)\//, "") || ""];
-  if (placeholder) labels.model_enum = placeholder;
-  payload.labels = labels;
+  // NOTA: os campos `labels` e `model_enum` são exclusivos do Cloud Code Assist
+  // (Antigravity) e NÃO devem ser enviados para a API pública do Google AI Studio —
+  // ela rejeita campos desconhecidos com 400 "API key not valid".
+  // O adapter Antigravity (antigravity.ts) gerencia seus próprios labels.
 
   // Conversão de tools do OpenAI para functionDeclarations do Gemini
   if (request.tools && request.tools.length > 0) {
