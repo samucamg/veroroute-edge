@@ -3,7 +3,7 @@
  */
 
 export const APP_VERSION = "1.0.0";
-export const APP_COMMIT_SHA = "823cac2";
+export const APP_COMMIT_SHA = "cdfa108";
 export const UPSTREAM_REPO_URL = "https://github.com/samucamg/veroroute-edge";
 export const UPSTREAM_REPO_NAME = "samucamg/veroroute-edge";
 export const UPSTREAM_AUTHOR = "Samuel Santos (samucamg)";

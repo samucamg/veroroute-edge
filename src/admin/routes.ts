@@ -472,7 +472,7 @@ export async function executeDirectProviderTest(
           classification: "sem_acesso",
         };
       }
-      resPromise = executeAntigravityRequest(testReq, antigravResult.accessToken, antigravResult.projectId || "", model);
+      resPromise = executeAntigravityRequest(testReq, antigravResult.accessToken, antigravResult.projectId || "", model, overrideBaseUrl);
     } else {
       if (!apiKey && providerId !== "pollinations" && providerId !== "freeapikey") {
         return {
@@ -709,7 +709,7 @@ adminRouter.post("/models", async (c) => {
 // Free provider presets
 // ---------------------------------------------------------------------------
 export const FREE_PROVIDER_PRESETS = [
-  { id: "gemini", name: "Google Gemini (AI Studio Free)", eloRank: 1, protocol: "openai", baseUrl: "https://generativelanguage.googleapis.com/v1beta", models: ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-pro"], recommendedModels: ["gemini-2.5-flash", "gemini-2.0-flash"], freeTier: true, freeTierNotes: "60M tokens/mes", supportsStreaming: true, supportsTools: true, supportsVision: true },
+  { id: "gemini", name: "Google Gemini (AI Studio Free)", eloRank: 1, protocol: "openai", baseUrl: "https://generativelanguage.googleapis.com/v1beta", models: ["gemini-3.8-flash", "gemini-flash-latest", "gemini-3.8-pro", "gemini-2.5-flash"], recommendedModels: ["gemini-3.8-flash", "gemini-flash-latest"], freeTier: true, freeTierNotes: "60M tokens/mes", supportsStreaming: true, supportsTools: true, supportsVision: true },
   { id: "groq", name: "Groq LPU (Ultra-Fast Inference)", eloRank: 2, protocol: "openai", baseUrl: "https://api.groq.com/openai/v1", models: ["openai/gpt-oss-120b", "openai/gpt-oss-20b"], recommendedModels: ["openai/gpt-oss-120b"], freeTier: true, freeTierNotes: "6.000 reqs/dia", supportsStreaming: true, supportsTools: true, supportsVision: false },
   { id: "cerebras", name: "Cerebras WSE-3", eloRank: 3, protocol: "openai", baseUrl: "https://api.cerebras.ai/v1", models: ["gpt-oss-120b", "qwen-3.8-27b"], recommendedModels: ["gpt-oss-120b"], freeTier: true, freeTierNotes: "1M tokens/dia", supportsStreaming: true, supportsTools: true, supportsVision: false },
   { id: "sambanova", name: "SambaNova Systems", eloRank: 4, protocol: "openai", baseUrl: "https://api.sambanova.ai/v1", models: ["Meta-Llama-3.3-70B-Instruct", "Qwen2.5-72B-Instruct"], recommendedModels: ["Meta-Llama-3.3-70B-Instruct"], freeTier: true, freeTierNotes: "LPU gratuito", supportsStreaming: true, supportsTools: true, supportsVision: false },
@@ -912,10 +912,8 @@ adminRouter.delete("/combos/:id/models", async (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// Combo test — A-7: direct provider call (not cascade), M-10: parallel + timeout
+// Combo test — A-7: direct provider call (not cascade), sequencial + timeout consciente
 // ---------------------------------------------------------------------------
-const COMBO_TEST_TIMEOUT_MS = 12_000;
-
 adminRouter.post("/combos/test", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as {
     comboId?: string;
@@ -930,27 +928,63 @@ adminRouter.post("/combos/test", async (c) => {
     targets = cfg.combos[body.comboId].targets;
   } else {
     targets = [
-      { provider: "gemini", model: "gemini-2.0-flash" },
+      { provider: "gemini", model: "gemini-3.8-flash" },
       { provider: "groq", model: "llama-3.3-70b-versatile" },
       { provider: "cerebras", model: "llama3.3-70b" },
       { provider: "cloudflare-ai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
     ];
   }
 
-  // A-7: call provider directly with proper adapter and timeout
-  const testTarget = async (target: { provider: string; model: string }) => {
+  // Execução sequencial para evitar estourar cota de concorrência simultânea do mesmo provedor
+  // (ex: Google Cloud Code Assist ou Google AI Studio retornando 503 capacity ou 429 quando
+  // múltiplos alvos disparam ao mesmo tempo com a mesma credencial).
+  const results: Array<Awaited<ReturnType<typeof executeDirectProviderTest>>> = [];
+  for (const target of targets) {
     const provCfg = getProviderConfig(target.provider);
     if (!provCfg) {
-      return { provider: target.provider, model: target.model, status: 404, latency_ms: 0, success: false, error: "Provedor não encontrado" };
+      results.push({
+        provider: target.provider,
+        model: target.model,
+        status: 404,
+        latency_ms: 0,
+        success: false,
+        error: "Provedor não encontrado",
+        classification: "modelo_inexistente",
+      });
+      continue;
     }
+
     const credential = await selectActiveCredential(c.env, target.provider);
     const apiKey = credential.apiKey;
-    const customBaseUrl = cfg.providerBaseUrls?.[target.provider] || (target.provider === "azure" ? c.env.AZURE_OPENAI_ENDPOINT : undefined);
-    return executeDirectProviderTest(c.env, target.provider, apiKey, target.model, COMBO_TEST_TIMEOUT_MS, customBaseUrl);
-  };
+    const customBaseUrl =
+      cfg.providerBaseUrls?.[target.provider] ||
+      (target.provider === "azure" ? c.env.AZURE_OPENAI_ENDPOINT : undefined) ||
+      provCfg.baseUrl;
 
-  // M-10: all in parallel
-  const results = await Promise.all(targets.map(testTarget));
+    // Modelos com cold start de OAuth, reasoning ou upstream do Google precisam de até 35s.
+    const targetTimeoutMs =
+      target.provider === "antigravity" ||
+      target.provider === "gemini" ||
+      target.provider === "nvidia" ||
+      target.provider === "cheaperinference" ||
+      target.model.includes("3.8") ||
+      target.model.includes("r1") ||
+      target.model.includes("o1") ||
+      target.model.includes("o3")
+        ? 35000
+        : 20000;
+
+    const res = await executeDirectProviderTest(
+      c.env,
+      target.provider,
+      apiKey,
+      target.model,
+      targetTimeoutMs,
+      customBaseUrl
+    );
+    results.push(res);
+  }
+
   return c.json({ ok: true, results });
 });
 

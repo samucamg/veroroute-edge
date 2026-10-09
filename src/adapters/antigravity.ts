@@ -14,7 +14,8 @@ export async function executeAntigravityRequest(
   request: ChatCompletionRequest,
   accessToken: string,
   projectId: string,
-  modelName: string
+  modelName: string,
+  overrideBaseUrl?: string
 ): Promise<Response> {
   const geminiPayload = formatOpenAIToGemini(request);
   const upstreamModel = normalizeAntigravityModel(modelName);
@@ -27,9 +28,10 @@ export async function executeAntigravityRequest(
   geminiPayload.generationConfig = generationConfig;
 
   const isStream = request.stream ?? false;
+  const runtimeBaseUrl = (overrideBaseUrl || ANTIGRAVITY_PUBLIC_CONFIG.runtimeBaseUrl).replace(/\/+$/, "");
   const endpoint = isStream
-    ? ANTIGRAVITY_PUBLIC_CONFIG.runtimeBaseUrl + ANTIGRAVITY_PUBLIC_CONFIG.streamGenerateContentPath
-    : ANTIGRAVITY_PUBLIC_CONFIG.runtimeBaseUrl + ANTIGRAVITY_PUBLIC_CONFIG.generateContentPath;
+    ? runtimeBaseUrl + ANTIGRAVITY_PUBLIC_CONFIG.streamGenerateContentPath
+    : runtimeBaseUrl + ANTIGRAVITY_PUBLIC_CONFIG.generateContentPath;
 
   const envelope: Record<string, unknown> = {
     model: upstreamModel,

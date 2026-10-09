@@ -1152,23 +1152,28 @@ dsh --model combo-super-payload
         </div>
       </div>
 
-      <!-- AUTH TOKEN DO SERVIDOR -->
+      <!-- SENHA DO ADMINISTRADOR (USUÁRIO: ADMIN FIXO) -->
       <div class="card">
-        <div class="card-title">🔐 AUTH_TOKEN do Servidor (Persistente)
+        <div class="card-title">🔐 Senha do Administrador (Usuário: <code>admin</code>)
           <span id="auth-token-status-badge" style="font-size:0.72rem; font-weight:500; padding:0.15rem 0.55rem; border-radius:99px; margin-left:0.5rem; background:rgba(100,100,120,0.25); color:var(--text-muted); vertical-align:middle;">Verificando...</span>
         </div>
-        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem; line-height: 1.5;">
-          Defina aqui um token de acesso que <strong>sobrevive a redeploys e sync do fork</strong> do GitHub,
-          sem precisar reconfigurar em <em>Settings → Variables</em> toda vez.
-          O valor salvo no KV tem prioridade sobre o <code>AUTH_TOKEN</code> do <code>wrangler.toml</code>.
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.75rem; line-height: 1.5;">
+          O usuário mestre do VeroRoute Edge é fixo como <strong><code>admin</code></strong>.
+          Defina aqui a sua senha personalizada, que será gravada no <strong>Cloudflare KV</strong> e sincronizada no seu navegador.
+          Ela <strong>sobrevive a qualquer redeploy, atualização de código ou Sync Fork do GitHub</strong>, tendo prioridade absoluta sobre o valor do <code>wrangler.toml</code>.
         </p>
+        <div style="background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 8px; padding: 0.6rem 0.85rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.75rem;">
+          <span style="font-size: 0.82rem; color: var(--text-muted);">Usuário Mestre:</span>
+          <code style="font-size: 0.88rem; font-weight: bold; color: var(--primary); background: rgba(56,189,248,0.15); padding: 0.15rem 0.5rem; border-radius: 4px;">admin</code>
+          <span style="font-size: 0.75rem; color: var(--text-muted);">(Fixo no painel e na API)</span>
+        </div>
         <div style="display: flex; gap: 0.75rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 0.75rem;">
           <div style="flex: 1; min-width: 220px;">
-            <label style="font-size:0.82rem; color:var(--text-muted); display:block; margin-bottom:0.3rem;">Novo AUTH_TOKEN (mín. 4 caracteres):</label>
-            <input type="password" id="server-auth-token-input" placeholder="Digite o novo token de acesso..." style="width:100%; font-family:monospace;" oninput="checkAuthTokenStrength(this.value)">
+            <label style="font-size:0.82rem; color:var(--text-muted); display:block; margin-bottom:0.3rem;">Nova Senha do Administrador (mín. 4 caracteres):</label>
+            <input type="password" id="server-auth-token-input" placeholder="Digite a nova senha do admin..." style="width:100%; font-family:monospace;" oninput="checkAuthTokenStrength(this.value)">
           </div>
-          <button class="btn" onclick="saveServerAuthToken()" style="white-space:nowrap;">💾 Salvar no KV</button>
-          <button class="btn btn-secondary" onclick="resetServerAuthToken()" style="white-space:nowrap; color:var(--rose); border-color:rgba(244,63,94,0.3);" title="Remove o token do KV e volta ao padrão do wrangler.toml">🗑️ Remover</button>
+          <button class="btn" onclick="saveServerAuthToken()" style="white-space:nowrap;">💾 Salvar Nova Senha no KV</button>
+          <button class="btn btn-secondary" onclick="resetServerAuthToken()" style="white-space:nowrap; color:var(--rose); border-color:rgba(244,63,94,0.3);" title="Remove a senha customizada do KV e volta ao padrão 'admin'">🗑️ Restaurar Padrão (admin)</button>
         </div>
         <div id="server-auth-token-strength" style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.5rem;"></div>
         <div id="server-auth-token-info" style="font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem;"></div>
@@ -1302,24 +1307,30 @@ dsh --model combo-super-payload
     <div class="modal-card" style="max-width: 440px; width: 92%;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
         <h3 style="margin: 0; font-size: 1.15rem; color: #fff; display: flex; align-items: center; gap: 0.5rem;">
-          <span>🔒</span> Autenticação de Administrador
+          <span>🔒</span> Login do Administrador
         </h3>
         <button type="button" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.85rem;" onclick="closeAdminAuthModal()">✕</button>
       </div>
 
+      <!-- Badge de Usuário Fixo -->
+      <div style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); padding: 0.65rem 0.85rem; border-radius: 8px; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between;">
+        <span style="font-size: 0.82rem; color: var(--text-muted);">Usuário do Sistema:</span>
+        <span style="font-family: monospace; font-weight: 700; color: var(--primary); background: rgba(56, 189, 248, 0.15); padding: 0.15rem 0.55rem; border-radius: 4px; font-size: 0.88rem;">admin <span style="font-size: 0.72rem; font-weight: 400; color: var(--text-muted);">(fixo)</span></span>
+      </div>
+
       <p style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 0.8rem;">
-        Insira a chave secreta <code>AUTH_TOKEN</code> configurada no seu Cloudflare Worker para acessar e gerenciar provedores, modelos, chaves e combos.
+        Insira a senha do administrador para autenticar e gerenciar provedores, modelos, chaves e combos.
       </p>
-      <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); padding: 0.6rem; border-radius: 6px; margin-bottom: 1.2rem;">
-        <span style="color: var(--amber); font-size: 0.75rem;"><strong>Dica:</strong> Se você não configurou o Secret na Cloudflare, a senha padrão é <code>admin</code>.</span>
+      <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); padding: 0.55rem 0.75rem; border-radius: 6px; margin-bottom: 1.1rem;">
+        <span style="color: var(--amber); font-size: 0.75rem;"><strong>Dica:</strong> Em instalações novas, a senha inicial é <code>admin</code>. Para alterá-la, use a aba <em>Administração</em>.</span>
       </div>
 
       <div style="margin-bottom: 1rem;">
         <label style="display: block; font-size: 0.8rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.4rem;">
-          AUTH_TOKEN do VeroRoute Edge:
+          Senha do Administrador:
         </label>
         <div style="position: relative; display: flex; align-items: center;">
-          <input type="password" id="admin-auth-input" placeholder="Cole seu AUTH_TOKEN aqui..." style="width: 100%; padding-right: 2.5rem; font-size: 0.85rem; font-family: monospace;" onkeydown="if(event.key==='Enter') submitAdminAuthModal()" />
+          <input type="password" id="admin-auth-input" placeholder="Digite a senha (padrão: admin)..." style="width: 100%; padding-right: 2.5rem; font-size: 0.85rem; font-family: monospace;" onkeydown="if(event.key==='Enter') submitAdminAuthModal()" />
           <button type="button" onclick="toggleAdminAuthVisibility()" style="position: absolute; right: 0.6rem; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1rem;" title="Mostrar / Ocultar">👁️</button>
         </div>
         <div id="admin-auth-error" style="color: var(--rose); font-size: 0.75rem; margin-top: 0.4rem; display: none;"></div>
@@ -1328,13 +1339,14 @@ dsh --model combo-super-payload
       <div style="margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.5rem;">
         <input type="checkbox" id="admin-auth-remember" checked style="cursor: pointer;" />
         <label for="admin-auth-remember" style="font-size: 0.78rem; color: var(--text-muted); cursor: pointer;">
-          Lembrar autenticação neste navegador
+          Lembrar autenticação neste navegador permanentemente
         </label>
       </div>
 
-      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; border-top: 1px solid var(--card-border); padding-top: 0.85rem;">
+      <div style="display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; border-top: 1px solid var(--card-border); padding-top: 0.85rem;">
+        <button type="button" id="admin-auth-logout-btn" class="btn btn-secondary" onclick="logoutAdmin()" style="display: none; color: var(--rose); border-color: rgba(244,63,94,0.3); margin-right: auto;">🚪 Desconectar</button>
         <button type="button" class="btn btn-secondary" onclick="closeAdminAuthModal()">Cancelar</button>
-        <button type="button" class="btn" style="background: linear-gradient(135deg, var(--primary), var(--secondary));" onclick="submitAdminAuthModal()">Autenticar / Salvar</button>
+        <button type="button" class="btn" style="background: linear-gradient(135deg, var(--primary), var(--secondary));" onclick="submitAdminAuthModal()">Entrar / Salvar</button>
       </div>
     </div>
   </div>
@@ -1784,6 +1796,7 @@ git push origin master
       sessionStorage.setItem('vr_admin_token', clean);
       if (remember !== false) {
         localStorage.setItem('vr_admin_token', clean);
+        localStorage.setItem('veroroute_admin_token_remember', 'true');
       }
       updateAdminAuthHeaderStatus();
     }
@@ -1791,7 +1804,16 @@ git push origin master
     function clearAdminToken() {
       sessionStorage.removeItem('vr_admin_token');
       localStorage.removeItem('vr_admin_token');
+      localStorage.removeItem('veroroute_admin_token_remember');
       updateAdminAuthHeaderStatus();
+    }
+
+    function logoutAdmin() {
+      clearAdminToken();
+      var modal = document.getElementById('modal-admin-auth');
+      if (modal) modal.classList.remove('active');
+      showToast('Sessão encerrada. Desconectado com sucesso.', 'info');
+      loadAdmin();
     }
 
     function updateAdminAuthHeaderStatus() {
@@ -1799,24 +1821,29 @@ git push origin master
       if (!btn) return;
       var token = getAdminToken();
       if (token) {
-        btn.innerText = '🔑 Admin: Ativo';
-        btn.style.color = 'var(--emerald)';
-        btn.style.borderColor = 'rgba(16,185,129,0.4)';
-        btn.title = 'Admin autenticado. Clique para alterar o AUTH_TOKEN.';
+        btn.innerHTML = '👤 <strong>admin</strong> <span style="font-size:0.72rem; color:var(--emerald); font-weight:600;">(Ativo)</span>';
+        btn.style.color = '#fff';
+        btn.style.borderColor = 'rgba(16,185,129,0.45)';
+        btn.title = 'Conectado como admin. Clique para gerenciar senha ou sair.';
       } else {
-        btn.innerText = '🔑 Autenticar';
+        btn.innerText = '🔑 Entrar (admin)';
         btn.style.color = 'var(--primary)';
         btn.style.borderColor = 'rgba(56,189,248,0.28)';
-        btn.title = 'Clique para inserir o AUTH_TOKEN de administrador.';
+        btn.title = 'Clique para entrar como administrador (usuário fixo: admin).';
       }
     }
 
     function openAdminAuthModal() {
       var input = document.getElementById('admin-auth-input');
       var errEl = document.getElementById('admin-auth-error');
+      var logoutBtn = document.getElementById('admin-auth-logout-btn');
+      var token = getAdminToken();
       if (input) {
-        input.value = getAdminToken();
+        input.value = token;
         input.type = 'password';
+      }
+      if (logoutBtn) {
+        logoutBtn.style.display = token ? 'inline-block' : 'none';
       }
       if (errEl) {
         errEl.style.display = 'none';
@@ -1851,7 +1878,7 @@ git push origin master
 
       if (!val) {
         if (errEl) {
-          errEl.innerText = 'Por favor, insira o AUTH_TOKEN.';
+          errEl.innerText = 'Por favor, insira a senha do administrador.';
           errEl.style.display = 'block';
         }
         return;
@@ -1860,7 +1887,7 @@ git push origin master
       setAdminToken(val, remember);
       var modal = document.getElementById('modal-admin-auth');
       if (modal) modal.classList.remove('active');
-      showToast('AUTH_TOKEN salvo com sucesso!', 'success');
+      showToast('Conectado como admin com sucesso!', 'success');
 
       var resolvers = pendingAuthResolvers.slice();
       pendingAuthResolvers = [];
@@ -2022,13 +2049,13 @@ git push origin master
         if (data.hasCustomToken) {
           badge.style.background = 'rgba(16,185,129,0.18)';
           badge.style.color = 'var(--emerald)';
-          badge.innerText = '\u2705 Token KV ativo: ' + (data.preview || '****');
-          if (info) info.innerText = 'Token personalizado salvo no KV. Sobreviverá ao próximo redeploy.';
+          badge.innerText = '✅ Senha KV ativa: ' + (data.preview || '****');
+          if (info) info.innerText = 'Senha customizada do admin salva no KV. Sobreviverá a qualquer redeploy ou sync do GitHub.';
         } else {
           badge.style.background = 'rgba(245,158,11,0.15)';
           badge.style.color = 'var(--amber)';
-          badge.innerText = '\u26a0\ufe0f Usando padrão do wrangler.toml';
-          if (info) info.innerText = 'Nenhum token customizado salvo. Defina um acima para que ele sobreviva a redeploys.';
+          badge.innerText = '⚠️ Padrão (admin)';
+          if (info) info.innerText = 'Nenhuma senha customizada salva no KV. O sistema usa a senha inicial ("admin"). Salve uma nova senha acima para fixá-la no KV.';
         }
       } catch(e) {
         badge.innerText = 'Sem KV';
@@ -2049,7 +2076,7 @@ git push origin master
       const input = document.getElementById('server-auth-token-input');
       const val = input.value.trim();
       if (!val || val.length < 4) {
-        showToast('Token muito curto — mínimo 4 caracteres.', 'error');
+        showToast('Senha muito curta — mínimo 4 caracteres.', 'error');
         return;
       }
       try {
@@ -2059,9 +2086,10 @@ git push origin master
         });
         const data = await res.json();
         if (data.ok) {
-          // Atualiza o token no localStorage para a sessão atual não quebrar
-          setAdminToken(val, Boolean(localStorage.getItem('veroroute_admin_token_remember')));
-          showToast('\u2705 AUTH_TOKEN salvo no KV! (' + (data.preview || '****') + '). Redeploys não afetarão mais.', 'success');
+          // Atualiza imediatamente o token no localStorage e sessionStorage de forma permanente
+          setAdminToken(val, true);
+          localStorage.setItem('veroroute_admin_token_remember', 'true');
+          showToast('✅ Senha do administrador salva no KV com sucesso! (' + (data.preview || '****') + '). Atualizada no seu navegador.', 'success');
           input.value = '';
           document.getElementById('server-auth-token-strength').innerText = '';
           loadAuthTokenStatus();
@@ -2074,12 +2102,14 @@ git push origin master
     }
 
     async function resetServerAuthToken() {
-      if (!confirm('Remover o token customizado do KV? O sistema voltará a usar o valor do wrangler.toml (\"admin\" por padrão).')) return;
+      if (!confirm('Restaurar a senha do administrador para o padrão ("admin")? O valor customizado será removido do KV.')) return;
       try {
         const res = await adminFetch('/api/admin/settings/auth-token', { method: 'DELETE' });
         const data = await res.json();
         if (data.ok) {
-          showToast('\u26a0\ufe0f Token KV removido. Sistema usa o wrangler.toml novamente.', 'info');
+          setAdminToken('admin', true);
+          localStorage.setItem('veroroute_admin_token_remember', 'true');
+          showToast('⚠️ Senha do administrador restaurada para o padrão ("admin").', 'info');
           loadAuthTokenStatus();
         }
       } catch(e) {

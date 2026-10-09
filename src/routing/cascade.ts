@@ -302,7 +302,7 @@ export async function dispatchWithCascade(
             if (candidate.provider === "antigravity") {
               const antigravResult = await getValidAntigravityAccessToken(env);
               if (!antigravResult?.accessToken) throw new Error("Antigravity: no valid access token");
-              return executeAntigravityRequest(outbound, antigravResult.accessToken, antigravResult.projectId || "", candidate.model);
+              return executeAntigravityRequest(outbound, antigravResult.accessToken, antigravResult.projectId || "", candidate.model, customBaseUrl);
             }
             // Para provedores customizados genéricos, ler o protocolo declarado no admin
             // ("anthropic" ou "openai") e passar para o adapter de forma que ele use

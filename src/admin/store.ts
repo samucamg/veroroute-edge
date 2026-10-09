@@ -113,7 +113,7 @@ const STATIC_COMBO_DEFINITIONS: Record<string, ComboConfig> = {
     description: "Roteamento inteligente para tarefas de programação",
     strategy: "priority",
     targets: [
-      { provider: "gemini", model: "gemini-2.0-flash", priority: 1 },
+      { provider: "gemini", model: "gemini-3.8-flash", priority: 1 },
       { provider: "groq", model: "qwen-2.5-coder-32b", priority: 2 },
       { provider: "cloudflare-ai", model: "@cf/qwen/qwen2.5-coder-32b-instruct", priority: 3 },
     ],
@@ -127,7 +127,7 @@ const STATIC_COMBO_DEFINITIONS: Record<string, ComboConfig> = {
     targets: [
       { provider: "groq", model: "llama-3.1-8b-instant", priority: 1 },
       { provider: "cloudflare-ai", model: "@cf/meta/llama-3.1-8b-instruct", priority: 2 },
-      { provider: "gemini", model: "gemini-2.0-flash-lite", priority: 3 },
+      { provider: "gemini", model: "gemini-3.8-flash", priority: 3 },
     ],
     enabled: true,
   },
@@ -202,7 +202,7 @@ export function buildDefaultCombos(adminCfg?: Partial<AdminConfig>): Record<stri
       ? freeModels.map((m, i) => ({ provider: m.providerId, model: m.modelId, priority: i + 1 }))
       : [
           // fallback estático se nenhum provedor estiver configurado
-          { provider: "gemini", model: "gemini-2.0-flash", priority: 1 },
+          { provider: "gemini", model: "gemini-3.8-flash", priority: 1 },
           { provider: "cloudflare-ai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", priority: 2 },
           { provider: "groq", model: "llama-3.3-70b-versatile", priority: 3 },
         ];
