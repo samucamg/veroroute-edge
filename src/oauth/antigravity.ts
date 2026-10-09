@@ -183,13 +183,17 @@ function extractProjectId(data: any): string {
  * Obtém ou atualiza o Access Token válido do Antigravity fazendo rodízio pelas contas (Multi-Account)
  */
 export async function getValidAntigravityAccessToken(
-  env: EnvBindings
+  env: EnvBindings,
+  // A cascata passa a conta que ela mesma escolheu. Sem isso o rodízio avançava
+  // duas posições por requisição (com 2 contas, sempre a mesma era usada) e o
+  // cooldown aplicado pela cascata caía na conta errada.
+  preselected?: { apiKey: string }
 ): Promise<{ accessToken: string; projectId: string }> {
   const { clientId, clientSecret } = await getAntigravityOAuthCredentials(env);
-  
+
   // A-11: Usamos o pool padrão de chaves para pegar o refresh token. Isso permite N contas.
-  const { selectActiveCredential } = await import("@/routing/keyPool");
-  const credential = await selectActiveCredential(env, "antigravity");
+  const credential = preselected
+    ?? await (await import("@/routing/keyPool")).selectActiveCredential(env, "antigravity");
   
   if (!credential.apiKey && !env.ANTIGRAVITY_REFRESH_TOKEN && !env.ANTIGRAVITY_ACCESS_TOKEN) {
     throw new Error("Antigravity não configurado. Realize o login OAuth ou configure chaves.");

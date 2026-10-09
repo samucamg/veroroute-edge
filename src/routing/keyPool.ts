@@ -101,3 +101,83 @@ export async function markKeyRateLimited(env: EnvBindings, apiKey: string, coold
   keyCooldowns.set(apiKey, expiryMs);
   if (env.OMNI_CACHE) await env.OMNI_CACHE.put(KV_COOLDOWN_PREFIX + apiKey, String(expiryMs), { expirationTtl: cooldownSec + 10 });
 }
+
+// ---------------------------------------------------------------------------
+// Bloqueio por (chave, modelo): um 404 "modelo indisponível" vale só para o par.
+// Ex.: projetos novos do Gemini não têm gemini-2.5-flash, projetos antigos têm.
+// ---------------------------------------------------------------------------
+const KV_MODEL_BLOCK_PREFIX = "cooldown_model:";
+const keyModelBlocks: Map<string, number> = new Map();
+
+async function keyModelId(apiKey: string, model: string): Promise<string> {
+  const data = new TextEncoder().encode(apiKey);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", data));
+  const hex = Array.from(digest.slice(0, 12)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return hex + ":" + model;
+}
+
+export async function markKeyModelUnavailable(env: EnvBindings, apiKey: string, model: string, cooldownSec: number): Promise<void> {
+  const id = await keyModelId(apiKey, model);
+  const expiryMs = Date.now() + cooldownSec * 1000;
+  keyModelBlocks.set(id, expiryMs);
+  if (env.OMNI_CACHE) {
+    await env.OMNI_CACHE.put(KV_MODEL_BLOCK_PREFIX + id, String(expiryMs), { expirationTtl: Math.max(60, cooldownSec + 10) });
+  }
+}
+
+async function isKeyModelBlocked(env: EnvBindings, apiKey: string, model: string): Promise<boolean> {
+  const id = await keyModelId(apiKey, model);
+  const now = Date.now();
+  const local = keyModelBlocks.get(id);
+  if (local !== undefined) {
+    if (now < local) return true;
+    keyModelBlocks.delete(id);
+  }
+  if (env.OMNI_CACHE) {
+    const kvVal = await env.OMNI_CACHE.get(KV_MODEL_BLOCK_PREFIX + id);
+    const expiry = kvVal ? parseInt(kvVal, 10) : NaN;
+    if (!isNaN(expiry) && now < expiry) {
+      keyModelBlocks.set(id, expiry);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Escolhe a credencial para UMA tentativa da cascata.
+ * Pula chaves já tentadas nesta requisição, em cooldown ou bloqueadas para o modelo.
+ * Retorna null quando não há mais chave utilizável: a cascata passa ao próximo candidato
+ * em vez de insistir numa chave sabidamente esgotada (o comportamento antigo era usar a
+ * primeira chave mesmo em cooldown).
+ * Provedores sem chave (pollinations, cloudflare-ai, env-only) recebem { apiKey: "" } uma vez.
+ */
+export async function selectCredentialForAttempt(
+  env: EnvBindings,
+  providerId: string,
+  model: string,
+  tried: Set<string>
+): Promise<ProviderCredential | null> {
+  providerId = normalizeProviderId(providerId);
+  const entries = await getProviderCredentials(env, providerId);
+  if (entries.length === 0) return tried.has("") ? null : { apiKey: "" };
+
+  if (!keyRotationIndex[providerId]) keyRotationIndex[providerId] = 0;
+  for (let i = 0; i < entries.length; i++) {
+    const idx = (keyRotationIndex[providerId] + i) % entries.length;
+    const entry = entries[idx];
+    if (tried.has(entry.apiKey)) continue;
+    if (await isKeyCooledDown(env, entry.apiKey)) continue;
+    if (await isKeyModelBlocked(env, entry.apiKey, model)) continue;
+    keyRotationIndex[providerId] = (idx + 1) % entries.length;
+    return entry;
+  }
+  return null;
+}
+
+/** Somente para testes: limpa o estado em memória do pool. */
+export function __resetKeyPoolStateForTests(): void {
+  for (const k of Object.keys(keyRotationIndex)) delete keyRotationIndex[k];
+  keyCooldowns.clear();
+  keyModelBlocks.clear();
+}

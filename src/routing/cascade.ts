@@ -4,7 +4,8 @@ import { executeCloudflareAI } from "@/adapters/cloudflare-ai";
 // Adapter 1min.ai removido: usar provedor customizado genérico compatível com OpenAI via painel admin.
 import { executeOpenAICompatible } from "@/adapters/openai-compatible";
 import { getValidAntigravityAccessToken } from "@/oauth/antigravity";
-import { markKeyRateLimited, selectActiveCredential } from "./keyPool";
+import { markKeyModelUnavailable, markKeyRateLimited, selectCredentialForAttempt } from "./keyPool";
+import { classifyUpstreamFailure } from "./errorScope";
 import { getAdminConfig } from "@/admin/store";
 import { getProviderConfig, registerCustomProvider, PROVIDER_REGISTRY } from "@/config/providers";
 import { normalizeProviderId } from "@/config/providerAliases";
@@ -257,7 +258,6 @@ export async function dispatchWithCascade(
   const ordered = applyRoutingStrategy(candidates, strategyName, request.model);
 
   const maxRetries = boundedInt(env.MAX_RETRIES, 3, 1, 10);
-  const retryDelay = boundedInt(env.RETRY_DELAY_MS, 1000, 100, 10000);
   const candidateTimeout = boundedInt((env as any).CASCADE_TIMEOUT_MS, 45000, 5000, 120000);
 
   const hasTools = !!request.tools?.length;
@@ -280,10 +280,22 @@ export async function dispatchWithCascade(
       outbound = injectToolCallingPrompt(request);
     }
 
+    // Cada tentativa usa uma chave DIFERENTE do mesmo candidato. MAX_RETRIES limita
+    // quantas chaves são tentadas antes de passar ao próximo candidato. Não há mais
+    // repetição da mesma chave com backoff: erro transitório vai direto ao próximo.
+    const triedKeys = new Set<string>();
     for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const credential = await selectCredentialForAttempt(env, candidate.provider, candidate.model, triedKeys);
+      if (!credential) {
+        if (attempt === 0) {
+          attempts.push({ provider: candidate.provider, model: candidate.model, status: 0, message: "Todas as chaves em cooldown ou bloqueadas para este modelo" });
+        }
+        break;
+      }
+      triedKeys.add(credential.apiKey);
+      const apiKey = credential.apiKey;
+
       try {
-        const credential = await selectActiveCredential(env, candidate.provider);
-        const apiKey = credential.apiKey;
         // Ordem de precedência para baseUrl:
         // 1. Override manual via providerBaseUrls (admin UI)
         // 2. baseUrl declarada no próprio customProvider (campo obrigatório ao cadastrar)
@@ -300,15 +312,16 @@ export async function dispatchWithCascade(
               return executeCloudflareAI(outbound, env.AI, candidate.model);
             }
             if (candidate.provider === "antigravity") {
-              const antigravResult = await getValidAntigravityAccessToken(env);
+              // Usa a MESMA conta escolhida acima (cooldown e rodízio consistentes).
+              const antigravResult = await getValidAntigravityAccessToken(env, credential);
               if (!antigravResult?.accessToken) throw new Error("Antigravity: no valid access token");
-              return executeAntigravityRequest(outbound, antigravResult.accessToken, antigravResult.projectId || "", candidate.model, customBaseUrl);
+              return executeAntigravityRequest(outbound, antigravResult.accessToken, antigravResult.projectId || "", candidate.model, customBaseUrl, signal);
             }
             // Para provedores customizados genéricos, ler o protocolo declarado no admin
             // ("anthropic" ou "openai") e passar para o adapter de forma que ele use
             // o header correto (x-api-key + anthropic-version vs Authorization: Bearer)
             const customProtocol = adminCfg.customProviders?.[candidate.provider]?.protocol;
-            return executeOpenAICompatible(outbound, candidate.provider, apiKey, candidate.model, customBaseUrl, customProtocol);
+            return executeOpenAICompatible(outbound, candidate.provider, apiKey, candidate.model, customBaseUrl, customProtocol, signal);
           }, candidateTimeout);
         } catch (err) {
           if (err instanceof UpstreamTimeout) {
@@ -356,7 +369,7 @@ export async function dispatchWithCascade(
                 const body = await cloned.json();
                 const usage = extractTokenUsage(body);
                 await recordUsage(env, principal!, candidate.provider, usage.prompt, usage.completion);
-              } catch { /* stream or invalid â skip */ }
+              } catch { /* stream or invalid — skip */ }
             })());
           }
           if (ctx && !wantedStream) ctx.waitUntil(cacheResponse(request, response.clone(), env));
@@ -364,38 +377,36 @@ export async function dispatchWithCascade(
           return response;
         }
 
-        // Error handling
+        // Error handling: o ESCOPO do erro decide o que punir e o que tentar a seguir.
         const errBody = await response.text().catch(() => "");
         const sanitised = sanitiseError(errBody, candidate.provider, response.status);
-        attempts.push({ provider: candidate.provider, model: candidate.model, status: response.status, message: sanitised });
+        const failure = classifyUpstreamFailure(response.status, errBody);
+        attempts.push({ provider: candidate.provider, model: candidate.model, status: response.status, message: `${sanitised} [${failure.reason}]` });
 
-        // C5: record failure for circuit breaker
-        await recordProviderFailure(env, candidate.provider, ctx);
-
-        // Cooldown on 429
-        if (response.status === 429 && apiKey) {
-          const cooldownPromise = markKeyRateLimited(env, apiKey, 60);
-          if (ctx) ctx.waitUntil(cooldownPromise);
-          else await cooldownPromise;
+        if (failure.scope === "key" && apiKey) {
+          // 401/402/403: a chave em si não serve; tira ela inteira do rodízio.
+          const p = markKeyRateLimited(env, apiKey, failure.cooldownSec ?? 60);
+          if (ctx) ctx.waitUntil(p); else await p;
+          continue; // próxima chave do mesmo candidato
         }
-
-        // Retry with exponential backoff
-        if ((response.status === 429 || response.status >= 500) && attempt < maxRetries - 1) {
-          const delay = retryDelay * Math.pow(2, attempt) + Math.random() * 500;
-          await new Promise((r) => setTimeout(r, delay));
+        if ((failure.scope === "quota" || failure.scope === "model") && apiKey) {
+          // 429: a cota é DESTE modelo nesta chave (até meia-noite PT se for diária).
+          // 404: o modelo não existe PARA ESTA CHAVE. Em ambos, só o par (chave, modelo)
+          // sai do rodízio; a chave continua servindo os outros modelos do combo.
+          const p = markKeyModelUnavailable(env, apiKey, candidate.model, failure.cooldownSec ?? 3600);
+          if (ctx) ctx.waitUntil(p); else await p;
           continue;
         }
-
-        break;
+        // Só instabilidade do provedor conta para o circuit breaker do provedor.
+        if (failure.scope === "transient") {
+          await recordProviderFailure(env, candidate.provider, ctx);
+        }
+        break; // transient/request: próximo candidato
 
       } catch (err: any) {
         const msg = (err?.message || "Unknown error").slice(0, 100);
         attempts.push({ provider: candidate.provider, model: candidate.model, status: 0, message: msg });
         await recordProviderFailure(env, candidate.provider, ctx);
-        if (attempt < maxRetries - 1) {
-          await new Promise((r) => setTimeout(r, retryDelay * Math.pow(2, attempt)));
-          continue;
-        }
         break;
       }
     }

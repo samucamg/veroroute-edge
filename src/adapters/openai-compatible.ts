@@ -1,6 +1,7 @@
 import { getProviderConfig } from "@/config/providers";
 import { GEMINI_OPENAI_COMPAT_BASE_URL, resolveGeminiSurface } from "@/config/providerAliases";
 import { formatGeminiSSEChunkToOpenAI, formatGeminiToOpenAI, formatOpenAIToGemini } from "./gemini";
+import { buildGeminiThinkingConfig, geminiCompatReasoningEffort } from "./geminiThinking";
 import type { ChatCompletionRequest } from "@/types/openai";
 
 /**
@@ -12,7 +13,10 @@ export async function executeOpenAICompatible(
   apiKey: string,
   modelName: string,
   overrideBaseUrl?: string,
-  overrideProtocol?: string
+  overrideProtocol?: string,
+  // Cancela a chamada de verdade quando o deadline da cascata estoura
+  // (antes a conexão ficava pendurada no upstream mesmo após o timeout).
+  signal?: AbortSignal
 ): Promise<Response> {
   const provider = getProviderConfig(providerId);
   // Provedores customizados genéricos (não registrados em PROVIDER_REGISTRY) são válidos
@@ -41,6 +45,16 @@ export async function executeOpenAICompatible(
         : `${base}/models/${cleanModel}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
     const geminiBody = formatOpenAIToGemini(request);
+    // Sem controle de thinking, Flash 3.x/-latest levavam 6–49s e devolviam texto vazio
+    // com max_tokens baixo. Padrão: reasoning_effort "low" (ver geminiThinking.ts).
+    const thinkingConfig = buildGeminiThinkingConfig(cleanModel, request.reasoning_effort);
+    if (thinkingConfig) {
+      geminiBody.generationConfig = {
+        ...((geminiBody.generationConfig as Record<string, unknown>) || {}),
+        thinkingConfig,
+      };
+    }
+    const compatReasoningEffort = geminiCompatReasoningEffort(cleanModel, request.reasoning_effort);
 
     const res = await fetch(url, {
       method: "POST",
@@ -52,6 +66,7 @@ export async function executeOpenAICompatible(
           ? {
               ...request,
               model: cleanModel,
+              reasoning_effort: compatReasoningEffort,
               routing_strategy: undefined,
               output_style: undefined,
               enable_search: undefined,
@@ -61,6 +76,7 @@ export async function executeOpenAICompatible(
             }
           : geminiBody
       ),
+      signal,
     });
 
     if (!res.ok) {
@@ -219,6 +235,7 @@ export async function executeOpenAICompatible(
     method: "POST",
     headers,
     body: JSON.stringify(bodyPayload),
+    signal,
   });
 
   // Em caso de streaming SSE pass-through direto

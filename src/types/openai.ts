@@ -60,6 +60,8 @@ export interface ChatCompletionRequest {
   tool_choice?: string | Record<string, unknown>;
   response_format?: { type: "text" | "json_object" | "json_schema"; json_schema?: unknown };
   user?: string;
+  /** Nível de raciocínio (padrão OpenAI); usado para o thinking do Gemini. */
+  reasoning_effort?: "none" | "minimal" | "low" | "medium" | "high";
   // Campos avançados e extensões do OmniRoute
   routing_strategy?: string;
   output_style?: string;

@@ -15,7 +15,8 @@ export async function executeAntigravityRequest(
   accessToken: string,
   projectId: string,
   modelName: string,
-  overrideBaseUrl?: string
+  overrideBaseUrl?: string,
+  signal?: AbortSignal
 ): Promise<Response> {
   const geminiPayload = formatOpenAIToGemini(request);
   const upstreamModel = normalizeAntigravityModel(modelName);
@@ -51,6 +52,7 @@ export async function executeAntigravityRequest(
       "User-Agent": ANTIGRAVITY_PUBLIC_CONFIG.userAgent,
     },
     body: JSON.stringify(envelope),
+    signal,
   });
 
   if (!upstreamRes.ok) {

@@ -2734,7 +2734,8 @@ git push origin master
         if (r) {
           badge.className = 'model-test-badge badge-latency ' + (r.success ? 'ok' : 'err');
           if (r.success) {
-            badge.innerText = '⚡ ' + r.latency_ms + 'ms · OK';
+            badge.innerText = r.empty ? '⚠ ' + r.latency_ms + 'ms · vazio' : '⚡ ' + r.latency_ms + 'ms · OK';
+            if (r.empty) badge.className = 'model-test-badge badge-latency err';
             showToast('✅ ' + modelName + ' respondeu em ' + r.latency_ms + 'ms!', 'success');
           } else {
             var labelMap = {
@@ -2812,7 +2813,8 @@ git push origin master
               badge.style.fontSize = '0.7rem';
               badge.style.marginLeft = '0.4rem';
               if (r.success) {
-                badge.innerText = '⚡ ' + r.latency_ms + 'ms · OK';
+                badge.innerText = r.empty ? '⚠ ' + r.latency_ms + 'ms · vazio' : '⚡ ' + r.latency_ms + 'ms · OK';
+                if (r.empty) badge.className = 'model-test-badge badge-latency err';
               } else {
                 var labelMap = {
                   ok: 'OK',
@@ -3716,7 +3718,11 @@ git push origin master
           data.results.forEach(function(r, idx) {
             const badge = document.getElementById('test-badge-' + comboId + '-' + idx);
             if (badge) {
-              if (r.success) {
+              if (r.success && r.empty) {
+                badge.className = 'badge-latency err';
+                badge.innerText = '⚠ ' + r.latency_ms + 'ms · vazio';
+                badge.title = 'HTTP 200, mas o modelo não devolveu texto (ex.: thinking consumiu o max_tokens).';
+              } else if (r.success) {
                 badge.className = 'badge-latency ok';
                 badge.innerText = '⚡ ' + r.latency_ms + 'ms · OK';
               } else {

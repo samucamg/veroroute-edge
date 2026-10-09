@@ -419,6 +419,8 @@ export async function executeDirectProviderTest(
   latency_ms: number;
   success: boolean;
   output?: string;
+  /** 200 sem texto nem tool call (ex.: thinking consumiu todo o max_tokens). */
+  empty?: boolean;
   error?: string;
   classification: "ok" | "modelo_inexistente" | "sem_acesso" | "cota_esgotada" | "precisa_pago" | "timeout" | "outro_erro";
 }> {
@@ -441,6 +443,15 @@ export async function executeDirectProviderTest(
   };
 
   const start = Date.now();
+  // O timeout cancela o fetch de verdade (antes a conexão ficava pendurada no upstream).
+  const controller = new AbortController();
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  const armDeadline = (reject: (e: Error) => void) => {
+    timers.push(setTimeout(() => {
+      controller.abort();
+      reject(new Error("Timeout " + timeoutMs + "ms"));
+    }, timeoutMs));
+  };
   try {
     let resPromise: Promise<Response>;
 
@@ -472,7 +483,7 @@ export async function executeDirectProviderTest(
           classification: "sem_acesso",
         };
       }
-      resPromise = executeAntigravityRequest(testReq, antigravResult.accessToken, antigravResult.projectId || "", model, overrideBaseUrl);
+      resPromise = executeAntigravityRequest(testReq, antigravResult.accessToken, antigravResult.projectId || "", model, overrideBaseUrl, controller.signal);
     } else {
       if (!apiKey && providerId !== "pollinations" && providerId !== "freeapikey") {
         return {
@@ -488,13 +499,13 @@ export async function executeDirectProviderTest(
       // Para provedores customizados, ler o protocolo (openai / anthropic) declarado no admin
       const adminCfg = await getAdminConfig(env);
       const customProtocol = adminCfg.customProviders?.[providerId]?.protocol;
-      resPromise = executeOpenAICompatible(testReq, providerId, apiKey, model, overrideBaseUrl, customProtocol);
+      resPromise = executeOpenAICompatible(testReq, providerId, apiKey, model, overrideBaseUrl, customProtocol, controller.signal);
     }
 
     let res = (await Promise.race([
       resPromise,
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout " + timeoutMs + "ms")), timeoutMs)
+        armDeadline(reject)
       ),
     ])) as Response;
 
@@ -512,7 +523,7 @@ export async function executeDirectProviderTest(
         const retryRes = await Promise.race([
           retryPromise,
           new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("Timeout " + timeoutMs + "ms")), timeoutMs)
+            armDeadline(reject)
           ),
         ]).catch(() => null);
         if (retryRes && retryRes.ok) {
@@ -522,10 +533,16 @@ export async function executeDirectProviderTest(
     }
 
     const latency = Date.now() - start;
+    // Resposta chegou: desarma o abort para não cortar a leitura do corpo.
+    for (const t of timers.splice(0)) clearTimeout(t);
     if (res.ok) {
-      let text = "OK";
+      // Sem default "OK": um 200 com conteúdo vazio (ex.: thinking consumindo
+      // todo o max_tokens) era exibido como sucesso no painel.
+      let text = "";
+      let hasToolCall = false;
       try {
         const j = (await res.json()) as any;
+        hasToolCall = Boolean(j.choices?.[0]?.message?.tool_calls?.length);
         if (j.choices?.[0]?.message?.content) {
           text = j.choices[0].message.content.trim().slice(0, 40);
         } else if (j.candidates?.[0]?.content?.parts?.[0]?.text) {
@@ -534,7 +551,17 @@ export async function executeDirectProviderTest(
           text = String(j.response || j.output).trim().slice(0, 40);
         }
       } catch {}
-      return { provider: providerId, model, status: res.status, latency_ms: latency, success: true, output: text, classification: "ok" };
+      const empty = !text && !hasToolCall;
+      return {
+        provider: providerId,
+        model,
+        status: res.status,
+        latency_ms: latency,
+        success: true,
+        output: empty ? "(resposta vazia)" : text || "OK",
+        empty,
+        classification: "ok",
+      };
     }
 
     const errText = (await res.text().catch(() => "")).slice(0, 240);
@@ -552,6 +579,8 @@ export async function executeDirectProviderTest(
       error: msg,
       classification,
     };
+  } finally {
+    for (const t of timers) clearTimeout(t);
   }
 }
 
