@@ -344,15 +344,136 @@ describe("Dossiê de Falhas do Subsistema de Modelos (Casos de Regressão)", () 
     expect(secondRun).toBe(false);
   });
 
-  it("Fase 5: Migração aplicada com sucesso sobre o snapshot real do KV de produção", async () => {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
+  it("Fase 5: Migração v3 sanea snapshot completo com 5 provedores duplicados, modelStates e removedModels legados", async () => {
     const { migrateAdminConfigToV2 } = await import("@/admin/store");
 
-    const backupPath = path.resolve(process.cwd(), "backups/kv-production-backup-20260917.json");
-    expect(fs.existsSync(backupPath)).toBe(true);
+    // Fixture sintética em memória (sem dependência de arquivo em backups/ e sem fragmentos reais)
+    const prodSnapshot: any = {
+      // version ausente/falsy como em snapshots pré-v2
+      providerStates: {
+        "openrouter-free": { enabled: false },
+      },
+      modelStates: {
+        "groq-lpu-ultra-fast-inference/llama-3.3-70b-versatile": { enabled: false },
+        "openrouter-free/inclusionai/ling-3.0-flash-vl:free": { enabled: false },
+        "openai/gpt-4o": { enabled: false },
+      },
+      customModels: {
+        antigravity: [
+          // 6 modelos estáticos (devem ser removidos de customModels)
+          "gemini-3.7-flash-low",
+          "gemini-3.1-pro-low",
+          "claude-sonnet-4-6",
+          "gpt-oss-120b-medium",
+          "gemini-3.1-flash-lite",
+          "gemini-3.5-flash-lite",
+          // 6 modelos customizados não-estáticos (devem permanecer)
+          "gemini-3.6-flash-high",
+          "gemini-3.6-flash-medium",
+          "gemini-3.6-flash-low",
+          "gemini-2.5-flash-lite",
+          "gemini-3-flash",
+          "gemini-3.5-flash-low",
+        ],
+        openrouter: [
+          "deepseek/deepseek-v4.1-flash",
+          "meta-llama/llama-3.3-70b-instruct:free", // estático
+        ],
+      },
+      removedModels: {
+        "openrouter-free-models": ["deepseek/deepseek-r1-0528:free"],
+        "openrouter-free": ["inclusionai/ling-3.0-flash-vl:free"],
+        "groq-lpu-ultra-fast-inference": ["llama-3.3-70b-versatile"],
+        agy: ["gemini-2.5-pro"],
+        openai: ["gpt-4o"],
+      },
+      customProviders: {
+        "openrouter-free-models": {
+          id: "openrouter-free-models",
+          name: "OpenRouter Free Models",
+          baseUrl: "https://openrouter.ai/api/v1",
+          apiKeys: ["test****0001"],
+          protocol: "openai",
+          models: ["inclusionai/ling-3.0-flash-vl:free"],
+          freeTier: true,
+          costPerMillionInput: 0,
+          costPerMillionOutput: 0,
+          supportsStreaming: true,
+          supportsTools: true,
+          supportsVision: false,
+        },
+        "cloudflare-workers-ai-native": {
+          id: "cloudflare-workers-ai-native",
+          name: "Cloudflare Workers AI (Native)",
+          baseUrl: "workers-ai",
+          apiKeys: ["test****0002"],
+          protocol: "openai",
+          models: ["@cf/meta/llama-3.3-70b-instruct-fp8-fast"],
+          freeTier: true,
+          costPerMillionInput: 0,
+          costPerMillionOutput: 0,
+          supportsStreaming: true,
+          supportsTools: true,
+          supportsVision: false,
+        },
+        "groq-lpu-ultra-fast-inference": {
+          id: "groq-lpu-ultra-fast-inference",
+          name: "Groq LPU (Ultra-Fast Inference)",
+          baseUrl: "https://api.groq.com/openai/v1",
+          apiKeys: ["test****0003"],
+          protocol: "openai",
+          models: ["openai/gpt-oss-120b"],
+          freeTier: true,
+          costPerMillionInput: 0,
+          costPerMillionOutput: 0,
+          supportsStreaming: true,
+          supportsTools: true,
+          supportsVision: false,
+        },
+        "openrouter-free": {
+          id: "openrouter-free",
+          name: "OpenRouter Free Models",
+          baseUrl: "https://openrouter.ai/api/v1",
+          apiKeys: ["test****0004"],
+          protocol: "openai",
+          models: ["nex-agi/nex-n2.5-mini:free"],
+          freeTier: true,
+          costPerMillionInput: 0,
+          costPerMillionOutput: 0,
+          supportsStreaming: true,
+          supportsTools: true,
+          supportsVision: false,
+        },
+        "cerebras-wse-3": {
+          id: "cerebras-wse-3",
+          name: "Cerebras WSE-3",
+          baseUrl: "https://api.cerebras.ai/v1",
+          apiKeys: ["test****0005"],
+          protocol: "openai",
+          models: ["gpt-oss-120b"],
+          freeTier: true,
+          costPerMillionInput: 0,
+          costPerMillionOutput: 0,
+          supportsStreaming: true,
+          supportsTools: true,
+          supportsVision: false,
+        },
+      },
+      combos: {
+        "combo-alias": {
+          id: "combo-alias",
+          name: "Combo com Aliases",
+          strategy: "priority",
+          targets: [
+            { provider: "openrouter-free", model: "nex-agi/nex-n2.5-mini:free" },
+            { provider: "cerebras-wse-3", model: "gpt-oss-120b" },
+            { provider: "cloudflare-workers-ai-native", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
+          ],
+          enabled: true,
+        },
+      },
+    };
 
-    const prodSnapshot = JSON.parse(fs.readFileSync(backupPath, "utf-8"));
     expect(prodSnapshot.version).toBeFalsy();
     expect(Object.keys(prodSnapshot.customProviders).length).toBe(5);
 
@@ -366,6 +487,21 @@ describe("Dossiê de Falhas do Subsistema de Modelos (Casos de Regressão)", () 
     // Modelos estáticos redundantes foram saneados de customModels (de 12 caiu para os 6 modelos novos não estáticos)
     expect(prodSnapshot.customModels["antigravity"].length).toBe(6);
     expect(prodSnapshot.customModels["openrouter"]).toBeDefined();
+
+    // Estados e listas de modelos removidos foram normalizados para os IDs canônicos
+    expect(prodSnapshot.providerStates["openrouter-free"]).toBeUndefined();
+    expect(prodSnapshot.providerStates["openrouter"]).toEqual({ enabled: false });
+    expect(prodSnapshot.modelStates["groq-lpu-ultra-fast-inference/llama-3.3-70b-versatile"]).toBeUndefined();
+    expect(prodSnapshot.modelStates["groq/llama-3.3-70b-versatile"]).toEqual({ enabled: false });
+    expect(prodSnapshot.removedModels["openrouter-free-models"]).toBeUndefined();
+    expect(prodSnapshot.removedModels["openrouter-free"]).toBeUndefined();
+    expect(prodSnapshot.removedModels["agy"]).toBeUndefined();
+    expect(prodSnapshot.removedModels["antigravity"]).toContain("gemini-2.5-pro");
+    expect(prodSnapshot.combos["combo-alias"].targets.map((t: any) => t.provider)).toEqual([
+      "openrouter",
+      "cerebras",
+      "cloudflare-ai",
+    ]);
   });
 
   // -------------------------------------------------------------------------

@@ -23,7 +23,8 @@ services:
       - ./searxng-settings.yml:/etc/searxng/settings.yml:ro
     environment:
       - SEARXNG_BASE_URL=http://localhost:8080/
-      - SEARXNG_SECRET=change_me_to_a_random_secret_string_32_chars
+      # Defina SEARXNG_SECRET no arquivo .env local (veja deploy/searxng/.env.example)
+      - SEARXNG_SECRET=${SEARXNG_SECRET:?SEARXNG_SECRET must be set externally}
     depends_on:
       - redis
     cap_drop:

@@ -1,0 +1,28 @@
+title = "VeroRoute Edge Gitleaks Configuration"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "veroroute-provider-keys"
+description = "Detect modern AI provider API keys (OpenAI, OpenRouter, Gemini, Groq, Cerebras, NVIDIA, Bedrock)"
+regex = '''(sk-proj-[A-Za-z0-9_-]{20,}|sk-or-v1-[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{35}|gsk_[A-Za-z0-9]{20,}|csk-[A-Za-z0-9]{20,}|nvapi-[A-Za-z0-9_-]{20,}|ABSK[A-Za-z0-9+/=]{20,})'''
+
+[allowlist]
+description = "Allowlist only intentional dummy test fixtures and documentation examples"
+paths = [
+  '''^\.dev\.vars\.example$''',
+  '''^deploy/searxng/\.env\.example$''',
+  '''^deploy/searxng/searxng-settings\.yml$''',
+]
+regexes = [
+  '''nvapi-test-key-12345''',
+  '''sk-or-real-key-12345''',
+  '''gsk-real-key-99999''',
+  '''gsk-test-key-prevent-dup''',
+  '''sk-vr-seu-token''',
+  '''sk-vr-testvirtualkey0000000001''',
+  '''sk-vr-disabledvirtualkey000002''',
+  '''AIzaKEY[12]''',
+  '''change_me_to_a_random_secret_key_for_production''',
+]

@@ -22,7 +22,8 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - SEARXNG_SECRET=u9f8w4jf98w4jf98234h98fh2938hf23
+      # Defina SEARXNG_SECRET nas Environment Variables da Stack no Portainer (ex.: openssl rand -hex 32)
+      - SEARXNG_SECRET=${SEARXNG_SECRET:?SEARXNG_SECRET must be set in Portainer stack environment}
       - SEARXNG_REDIS_URL=redis://searxng-redis:6379/0
     depends_on:
       - searxng-redis

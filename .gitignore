@@ -13,6 +13,7 @@ deploy-personal.sh
 
 # Backups locais — nunca subir para o GitHub
 backups/
+kv-*-backup*.json
 *.tar.gz
 *.bak
 *.backup

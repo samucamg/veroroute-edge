@@ -88,14 +88,33 @@ This is the official, tested path. The fork stays connected to Cloudflare, the K
 5. **Enable the production address (Domains)**:
    Open **Domains** and use the toggle on the right to enable the production link, then click **Visit**. *Optional:* click **Add domain**, pick a domain from your Cloudflare account, add a subdomain (or leave it empty to use the domain itself), and confirm with **Add domain**.
 
-6. **Choose your password (`AUTH_TOKEN`)**:
-   In **Settings → Variables and Secrets**, set `AUTH_TOKEN` to a strong password and click **Deploy**.
-   ⚡ **Zero KV setup**: Cloudflare provisions and links `OMNI_KEYS` and `OMNI_CACHE` automatically during the build.
-   Fresh installations start with the documented default **`admin`** so you can log in immediately — change it right away.
+6. **Configure your master password (`AUTH_TOKEN`)**:
+   - **Fresh installation (first-time setup)**: `wrangler.toml` does **not** ship a predictable default password; if no `AUTH_TOKEN` is configured, all protected routes (`/api/admin/*`, `/v1/*`) fail closed with `401 Unauthorized`. Set your initial `AUTH_TOKEN` before logging in via one of:
+     1. **Cloudflare Dashboard**: Open your Worker → **Settings → Variables and Secrets**, add `AUTH_TOKEN` (Secret or Variable) with a strong random value (e.g., `openssl rand -hex 32`), and click **Deploy**.
+     2. **Wrangler CLI**: Run `npx wrangler secret put AUTH_TOKEN` and paste your token.
+     3. **Local development**: Copy `.dev.vars.example` to `.dev.vars` and set `AUTH_TOKEN=your_local_secret`.
+   - ⚡ **Zero KV setup**: Cloudflare provisions and links `OMNI_KEYS` and `OMNI_CACHE` automatically during the build.
 
-> ⚠️ **Important — after every Sync fork / rebuild**: `AUTH_TOKEN` is shipped in `wrangler.toml` so a fresh install already works with the default password `admin`. Because that repository file always carries the default, each new build started by **Sync fork** may reset the variable to `admin`, replacing a password you typed in the Dashboard. Whenever you update the instance, open **Settings → Variables and Secrets**, check `AUTH_TOKEN` and, if it was reset, save your own password again and click **Deploy**. This is expected behaviour, not data loss: your provider keys, combos and settings in KV are untouched.
+> 🔐 **Existing installation — Zero-Lockout `AUTH_TOKEN` Rotation & Precedence**:
+> VeroRoute Edge resolves the master token in strict order: **(1) `admin:config.authToken` stored in Cloudflare KV (`OMNI_KEYS`)** takes absolute precedence over **(2) Worker `env.AUTH_TOKEN` (`Variables and Secrets` / `.dev.vars`)**.
+> 1. **Check which token source is currently active**:
+>    ```bash
+>    curl -sS -H "Authorization: Bearer <CURRENT_TOKEN>" https://<YOUR_WORKER>/api/admin/settings/auth-token
+>    ```
+>    - `"hasCustomToken": true` → KV `admin:config.authToken` is active (survives **Sync fork** and rebuilds automatically).
+>    - `"hasCustomToken": false` → Worker `env.AUTH_TOKEN` is active.
+> 2. **Safe rotation sequence (without losing admin access)**:
+>    - Update the KV-persisted token via the Admin Panel (**Settings → Master Token**) or API:
+>      ```bash
+>      curl -sS -X PUT https://<YOUR_WORKER>/api/admin/settings/auth-token \
+>        -H "Authorization: Bearer <CURRENT_TOKEN>" \
+>        -H "Content-Type: application/json" \
+>        -d '{"token":"<NEW_STRONG_TOKEN>"}'
+>      ```
+>    - Verify the new token returns `200 OK` and the old token returns `401 Unauthorized` against `/api/admin/settings/auth-token`.
+>    - Optionally mirror the same token into Worker Secrets (`npx wrangler secret put AUTH_TOKEN` or Dashboard **Settings → Variables and Secrets**) as a backup fallback.
 
-> 💡 **Staying updated**: open your fork and click **Sync fork ➔ Update branch**. Cloudflare redeploys automatically in about a minute and your provider keys, combos and settings remain stored in KV.
+> 💡 **Staying updated**: open your fork and click **Sync fork ➔ Update branch**. Cloudflare redeploys automatically in about a minute and your KV-stored `authToken`, provider keys, combos, and settings remain intact in `OMNI_KEYS`.
 
 ---
 
@@ -140,7 +159,7 @@ npx wrangler secret put AUTH_TOKEN
 
 | Environment Variable | Description | Default | Mandatory |
 |---|---|---|---|
-| `AUTH_TOKEN` | Master bearer token for the Admin API and the dashboard. Fresh installs default to `admin` — change it in **Settings → Variables and Secrets** | `admin` | Recommended |
+| `AUTH_TOKEN` | Master bearer token for the Admin API and dashboard (fail-closed `401` if unset in both KV `admin:config.authToken` and Worker Secrets/Vars). Set via Dashboard **Settings → Variables and Secrets**, `npx wrangler secret put AUTH_TOKEN`, or `.dev.vars` | — (Required) | Yes |
 | `DEFAULT_ROUTING_STRATEGY` | Default strategy (`priority`, `weighted`, `round-robin`, `p2c`, `fill-first`, `least-used`, `cost`, `lkgp`, `session-affinity`) | `priority` | No |
 | `MAX_RETRIES` | Maximum retry attempts per upstream target | `3` | No |
 | `RETRY_DELAY_MS` | Initial delay between retries in milliseconds | `1000` | No |
@@ -248,14 +267,33 @@ Este é o caminho oficial e testado. O fork permanece conectado à Cloudflare, o
 5. **Habilite o endereço de produção (Domains)**:
    Abra **Domains** e clique no botão à direita para habilitar o link em produção; use **Visit** para acessar. *Opcional:* clique em **Add domain**, escolha um domínio da sua conta Cloudflare, informe um subdomínio (ou deixe vazio para usar o próprio domínio) e confirme em **Add domain**.
 
-6. **Escolha sua senha (`AUTH_TOKEN`)**:
-   Em **Settings → Variables and Secrets**, defina `AUTH_TOKEN` com uma senha forte e clique em **Deploy**.
-   ⚡ **Zero configuração de KV**: a Cloudflare cria e vincula `OMNI_KEYS` e `OMNI_CACHE` automaticamente durante o build.
-   A instalação nova inicia com a senha padrão documentada **`admin`**, permitindo o primeiro acesso imediato — troque-a logo depois.
+6. **Configure sua senha mestre (`AUTH_TOKEN`)**:
+   - **Instalação nova (primeiro acesso)**: o `wrangler.toml` **não** inclui senha padrão previsível; enquanto nenhum `AUTH_TOKEN` estiver configurado, todas as rotas protegidas (`/api/admin/*`, `/v1/*`) operam em modo *fail-closed* (`401 Unauthorized`). Defina seu primeiro `AUTH_TOKEN` por um dos caminhos:
+     1. **Painel da Cloudflare**: Abra seu Worker → **Settings → Variables and Secrets**, adicione `AUTH_TOKEN` (Secret ou Variable) com um valor forte (ex.: `openssl rand -hex 32`) e clique em **Deploy**.
+     2. **Wrangler CLI**: Execute `npx wrangler secret put AUTH_TOKEN` e informe o token.
+     3. **Desenvolvimento local**: Copie `.dev.vars.example` para `.dev.vars` e preencha `AUTH_TOKEN=sua_senha_local`.
+   - ⚡ **Zero configuração de KV**: a Cloudflare cria e vincula `OMNI_KEYS` e `OMNI_CACHE` automaticamente durante o build.
 
-> ⚠️ **Importante — depois de cada Sync fork / novo build**: o `AUTH_TOKEN` fica no `wrangler.toml` justamente para que a instalação nova já funcione com a senha padrão `admin`. Como o arquivo do repositório sempre traz esse valor, cada build disparado pelo **Sync fork** pode devolver a variável para `admin` e substituir a senha que você definiu no painel. Sempre que atualizar a instância, abra **Settings → Variables and Secrets**, confira o `AUTH_TOKEN` e, se ele voltou para `admin`, salve novamente a sua senha e clique em **Deploy**. Isso é esperado e não apaga nada: suas chaves de provedores, combos e configurações continuam no KV.
+> 🔐 **Instalação existente — Precedência e Rotação Segura do `AUTH_TOKEN` (Sem Perda de Acesso)**:
+> O VeroRoute Edge resolve o token mestre na seguinte ordem: **(1) `admin:config.authToken` persistido no Cloudflare KV (`OMNI_KEYS`)** tem precedência absoluta sobre **(2) `env.AUTH_TOKEN` do Worker (`Variables and Secrets` / `.dev.vars`)**.
+> 1. **Verifique qual fonte está ativa no ambiente**:
+>    ```bash
+>    curl -sS -H "Authorization: Bearer <TOKEN_ATUAL>" https://<SEU_WORKER>/api/admin/settings/auth-token
+>    ```
+>    - `"hasCustomToken": true` → o `authToken` do KV está ativo (sobrevive automaticamente a **Sync fork** e novos deploys).
+>    - `"hasCustomToken": false` → o `env.AUTH_TOKEN` do Worker está ativo.
+> 2. **Sequência segura de rotação (zero lockout)**:
+>    - Grave o novo token no KV pelo Painel Administrativo (**Configurações → Token de Acesso**) ou via API:
+>      ```bash
+>      curl -sS -X PUT https://<SEU_WORKER>/api/admin/settings/auth-token \
+>        -H "Authorization: Bearer <TOKEN_ATUAL>" \
+>        -H "Content-Type: application/json" \
+>        -d '{"token":"<NOVO_TOKEN_FORTE>"}'
+>      ```
+>    - Confirme que o novo token responde `200 OK` e que o token antigo responde `401 Unauthorized` em `/api/admin/settings/auth-token`.
+>    - Opcionalmente, atualize também o Secret do Worker (`npx wrangler secret put AUTH_TOKEN` ou **Settings → Variables and Secrets**) como fallback de segurança.
 
-> 💡 **Como manter atualizado**: abra o seu fork e clique em **Sync fork ➔ Update branch**. A Cloudflare refaz o deploy automaticamente em cerca de um minuto e suas chaves de provedores, combos e configurações continuam guardados no KV.
+> 💡 **Como manter atualizado**: abra o seu fork e clique em **Sync fork ➔ Update branch**. A Cloudflare refaz o deploy automaticamente em cerca de um minuto e seu `authToken`, chaves de provedores, combos e configurações permanecem intactos no KV `OMNI_KEYS`.
 
 ---
 

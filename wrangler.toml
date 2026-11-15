@@ -12,9 +12,9 @@ binding = "AI"
 
 [vars]
 # AUTH_TOKEN define a senha de acesso ao painel e a Admin API.
-# O valor "admin" entra em toda instalacao nova; o usuario troca em
-# Settings -> Variables and Secrets quando quiser.
-AUTH_TOKEN = "admin"
+# Nao defina senha padrao neste arquivo: configure via `npx wrangler secret put AUTH_TOKEN`,
+# Cloudflare Dashboard (Settings -> Variables and Secrets), `.dev.vars` (local) ou Admin KV.
+# Sem AUTH_TOKEN configurado, todas as rotas protegidas falham fechadas (HTTP 401).
 SEARXNG_URL = "opcional"
 DEFAULT_ROUTING_STRATEGY = "priority"
 DEFAULT_OUTPUT_STYLE = "none"
