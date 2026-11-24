@@ -70,13 +70,12 @@ export function isGoogleAiStudioKey(apiKey: string): boolean {
 }
 
 /**
- * Decide a superfície de listagem/uso do Gemini a partir da chave + base URL.
- *   "openai" -> {base}/models com Authorization: Bearer
- *   "native" -> {base}/models com ?key= / x-goog-api-key
+ * Decide a superfície de listagem/uso do Gemini a partir da base URL.
+ *   "openai" -> {base}/models com Authorization: Bearer (apenas quando baseUrl termina em /openai)
+ *   "native" -> {base}/models com ?key= (aceita chaves AIza... e AQ.... e suporta gemma-4-* / gemini-4-*)
  */
-export function resolveGeminiSurface(baseUrl: string, apiKey: string): "openai" | "native" {
+export function resolveGeminiSurface(baseUrl: string, _apiKey: string): "openai" | "native" {
   if (isOpenAICompatBaseUrl(baseUrl)) return "openai";
-  if (isGoogleAiStudioKey(apiKey)) return "openai";
   return "native";
 }
 

@@ -9,7 +9,13 @@ import { augmentRequestWithWebSearch, dispatchSearch } from "./search/dispatcher
 import { fetchWithJinaReader } from "./search/jina";
 import { handleGenerateImages, handleEditImages } from "./adapters/images";
 import { handleAudioSpeech, handleAudioTranscriptions, handleAudioTranslations } from "./adapters/audio";
-import { exchangeAntigravityCode, getAntigravityAuthUrl } from "./oauth/antigravity";
+import {
+  discoverCompanionProject,
+  exchangeAntigravityCode,
+  getAntigravityAuthUrl,
+  refreshAntigravityToken,
+} from "./oauth/antigravity";
+import { ANTIGRAVITY_PUBLIC_CONFIG } from "./config/constants";
 import { executeMcpTool, handleMcpSse, MCP_TOOLS_LIST } from "./mcp/server";
 import { renderDashboardHtml } from "./ui/dashboard";
 import { adminRouter } from "./admin/routes";
@@ -330,8 +336,7 @@ app.get("/api/oauth/antigravity/callback", async (c) => {
     return c.text("OMNI_KEYS não configurado — não é possível persistir tokens OAuth.", 503);
   }
 
-  const url = new URL(c.req.url);
-  const redirectUri = `${url.origin}/api/oauth/antigravity/callback`;
+  const redirectUri = "http://127.0.0.1:443/callback";
 
   try {
     const { clientId, clientSecret } = await getAntigravityOAuthCredentials(c.env);
@@ -389,10 +394,30 @@ app.post("/api/oauth/antigravity/import", async (c) => {
     } catch { /* not JSON — use as-is */ }
   }
 
+  if (!refreshToken) {
+    return c.json({ ok: false, error: "refresh_token ausente ou inválido" }, 400);
+  }
+
+  try {
+    const { clientId, clientSecret } = await getAntigravityOAuthCredentials(c.env);
+    const renewed = await refreshAntigravityToken(refreshToken, clientId, clientSecret);
+    if (!projectId) {
+      projectId = await discoverCompanionProject(renewed.access_token).catch(() => "");
+    }
+    if (!projectId) {
+      projectId = ANTIGRAVITY_PUBLIC_CONFIG.defaultProjectId;
+    }
+  } catch (err: unknown) {
+    return c.json(
+      { ok: false, error: `Refresh token inválido ou recusado pelo Google: ${err instanceof Error ? err.message : String(err)}` },
+      400
+    );
+  }
+
   const keyData = JSON.stringify({ refresh_token: refreshToken, project_id: projectId });
   await appendProviderCredentials(c.env, "antigravity", [{ apiKey: keyData }]);
   
-  return c.json({ ok: true, message: "Credenciais do Antigravity salvas no pool." });
+  return c.json({ ok: true, message: `Credenciais do Antigravity validadas e salvas no pool. Projeto: ${projectId}` });
 });
 
 // ---------------------------------------------------------------------------

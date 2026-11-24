@@ -433,11 +433,19 @@ export async function executeDirectProviderTest(
     model.includes("gpt-5") ||
     model.startsWith("o");
 
+  const needsHigherTestBudget =
+    model.startsWith("gemma-") ||
+    model.includes("sonar") ||
+    model.includes("thinking") ||
+    model.includes("3.8");
+
+  const testMaxTokens = needsHigherTestBudget ? 128 : 64;
+
   const testReq: ChatCompletionRequest = {
     model,
     messages: [{ role: "user" as const, content: "Respond with OK" }],
-    max_tokens: isReasoningOrNewOpenAI ? undefined : 5,
-    max_completion_tokens: isReasoningOrNewOpenAI ? 10 : undefined,
+    max_tokens: isReasoningOrNewOpenAI ? undefined : testMaxTokens,
+    max_completion_tokens: isReasoningOrNewOpenAI ? 64 : undefined,
     temperature: isReasoningOrNewOpenAI ? 1 : 0,
     stream: false,
   };

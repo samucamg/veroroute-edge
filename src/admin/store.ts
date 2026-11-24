@@ -780,8 +780,37 @@ export async function appendProviderCredentials(
   newCredentials: ProviderCredential[]
 ): Promise<ProviderCredential[]> {
   providerId = normalizeProviderId(providerId);
+  const ownCredentials: ProviderCredential[] = [];
+  const rerouted: Record<string, ProviderCredential[]> = {};
+
+  for (const item of newCredentials) {
+    let key = (item.apiKey || "").trim();
+    if (!key) continue;
+    // Corrige chave do Google AI Studio colada sem o "A" inicial (Q.Ab8... -> AQ.Ab8...)
+    if (/^Q\.Ab8/i.test(key)) {
+      key = "A" + key;
+    }
+    // Evita misturar chaves Groq (gsk_...) no pool do Gemini e vice-versa
+    if (providerId === "gemini" && key.startsWith("gsk_")) {
+      (rerouted["groq"] ||= []).push({ apiKey: key });
+      continue;
+    }
+    if (providerId === "groq" && (/^AQ\./i.test(key) || key.startsWith("AIza"))) {
+      (rerouted["gemini"] ||= []).push({ apiKey: key });
+      continue;
+    }
+    ownCredentials.push({ apiKey: key });
+  }
+
+  for (const [targetProvider, creds] of Object.entries(rerouted)) {
+    await appendProviderCredentials(env, targetProvider, creds);
+  }
+
   const existing = await getStoredProviderCredentials(env, providerId);
-  const merged = Array.from(new Map([...existing, ...newCredentials]
+  if (ownCredentials.length === 0) {
+    return existing;
+  }
+  const merged = Array.from(new Map([...existing, ...ownCredentials]
     .map((item) => ({ apiKey: item.apiKey.trim() }))
     .filter((item) => item.apiKey)
     .map((item) => [item.apiKey, item])).values());

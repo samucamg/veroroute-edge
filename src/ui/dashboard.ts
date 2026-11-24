@@ -819,7 +819,7 @@ curl -X POST https://seu-worker.workers.dev/v1/search \\
               <li style="margin-bottom: 0.5rem;">
                 <strong>Etapa 1:</strong> Abra este link no seu navegador para fazer o login no Google:
                 <br>
-                <a id="agy-auth-btn" href="/api/oauth/antigravity/authorize" target="_blank" class="btn" style="padding: 0.35rem 0.75rem; font-size: 0.75rem; margin-top: 0.5rem; display: inline-block;">
+                <a id="agy-auth-btn" href="/api/oauth/antigravity/authorize" target="_blank" onclick="openAntigravityOAuthPopup(event)" class="btn" style="padding: 0.35rem 0.75rem; font-size: 0.75rem; margin-top: 0.5rem; display: inline-block;">
                   🔗 Abrir Página de Login do Google
                 </a>
               </li>
@@ -3379,6 +3379,19 @@ git push origin master
     }
 
     // ============ ANTIGRAVITY OAUTH & KV CONFIG ============
+    async function openAntigravityOAuthPopup(event) {
+      if (event) event.preventDefault();
+      try {
+        const token = await ensureAdminToken();
+        const url = '/api/oauth/antigravity/authorize?token=' + encodeURIComponent(token);
+        const authBtn = document.getElementById('agy-auth-btn');
+        if (authBtn) authBtn.href = url;
+        window.open(url, '_blank', 'noopener');
+      } catch (e) {
+        showToast('Autentique-se como admin antes de conectar o Antigravity.', 'error');
+      }
+    }
+
     async function loadAntigravityStatus() {
       const badge = document.getElementById('agy-badge-configured');
       const detail = document.getElementById('agy-detail-text');

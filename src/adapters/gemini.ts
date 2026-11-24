@@ -9,6 +9,38 @@ import type {
 
 
 /**
+ * Google Gemini aceita um subconjunto de JSON Schema. Remove extensões de
+ * OpenAI/IDEs (additionalProperties, $schema, strict etc.) recursivamente.
+ */
+function sanitizeGeminiSchema(schema: unknown): Record<string, unknown> {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+    return { type: "OBJECT", properties: {} };
+  }
+  const src = schema as Record<string, unknown>;
+  const allowed = ["type", "description", "properties", "required", "items", "enum", "nullable", "format"];
+  const clean: Record<string, unknown> = {};
+  for (const key of allowed) {
+    if (!(key in src)) continue;
+    const val = src[key];
+    if (key === "properties" && val && typeof val === "object" && !Array.isArray(val)) {
+      const props: Record<string, unknown> = {};
+      for (const [propName, propSchema] of Object.entries(val as Record<string, unknown>)) {
+        props[propName] = sanitizeGeminiSchema(propSchema);
+      }
+      clean[key] = props;
+    } else if (key === "items" && val && typeof val === "object") {
+      clean[key] = sanitizeGeminiSchema(val);
+    } else {
+      clean[key] = val;
+    }
+  }
+  if (!clean.type && clean.properties) {
+    clean.type = "OBJECT";
+  }
+  return Object.keys(clean).length > 0 ? clean : { type: "OBJECT", properties: {} };
+}
+
+/**
  * Converte mensagens do padrão OpenAI para o formato Google Gemini (contents + systemInstruction)
  */
 export function formatOpenAIToGemini(request: ChatCompletionRequest): Record<string, unknown> {
@@ -102,7 +134,7 @@ export function formatOpenAIToGemini(request: ChatCompletionRequest): Record<str
     const functionDeclarations = request.tools.map((t) => ({
       name: t.function.name,
       description: t.function.description || "",
-      parameters: t.function.parameters || { type: "OBJECT", properties: {} },
+      parameters: sanitizeGeminiSchema(t.function.parameters),
     }));
     payload.tools = [{ functionDeclarations }];
   }
@@ -124,7 +156,7 @@ export function formatGeminiToOpenAI(
   const toolCalls: any[] = [];
 
   for (const part of parts) {
-    if (part.text) {
+    if (part.text && !part.thought) {
       textContent += part.text;
     }
     if (part.functionCall) {
@@ -176,8 +208,13 @@ export function formatGeminiSSEChunkToOpenAI(
   const candidate = chunkJson.candidates?.[0];
   if (!candidate) return null;
 
-  const part = candidate.content?.parts?.[0];
-  const deltaText = part?.text || "";
+  const parts = Array.isArray(candidate.content?.parts) ? candidate.content.parts : [];
+  const deltaText = parts
+    .filter((p: any) => p && typeof p.text === "string" && !p.thought)
+    .map((p: any) => p.text)
+    .join("");
+
+  if (!deltaText && candidate.finishReason !== "STOP") return null;
 
   const chunk: ChatCompletionChunk = {
     id: `chatcmpl-${Math.random().toString(36).substring(2, 12)}`,

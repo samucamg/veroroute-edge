@@ -45,6 +45,14 @@ export async function executeOpenAICompatible(
         : `${base}/models/${cleanModel}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
     const geminiBody = formatOpenAIToGemini(request);
+    // Gemma: o raciocínio não pode ser desligado e consome o limite de saída.
+    // Piso de 1024 tokens para evitar resposta vazia (alinhado ao GeminiAdapter.php).
+    if (cleanModel.toLowerCase().startsWith("gemma-")) {
+      const genCfg = (geminiBody.generationConfig as Record<string, unknown>) || {};
+      const clientMax = Number(request.max_tokens ?? request.max_completion_tokens ?? 0);
+      genCfg.maxOutputTokens = Math.min(8192, Math.max(1024, clientMax));
+      geminiBody.generationConfig = genCfg;
+    }
     // Sem controle de thinking, Flash 3.x/-latest levavam 6–49s e devolviam texto vazio
     // com max_tokens baixo. Padrão: reasoning_effort "low" (ver geminiThinking.ts).
     const thinkingConfig = buildGeminiThinkingConfig(cleanModel, request.reasoning_effort);

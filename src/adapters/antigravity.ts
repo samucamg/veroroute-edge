@@ -26,6 +26,22 @@ export async function executeAntigravityRequest(
   const generationConfig = (geminiPayload.generationConfig || {}) as Record<string, unknown>;
   if (generationConfig.topK === undefined) generationConfig.topK = 40;
   if (generationConfig.topP === undefined || generationConfig.topP === 0.95) generationConfig.topP = 1.0;
+
+  // Alinhado ao CloudCodeAdapter.php: gemini-4-hydrogen-sonar precisa de thinkingBudget
+  // e piso de maxOutputTokens >= 128 para o pensamento não consumir toda a saída.
+  if (upstreamModel === "gemini-4-hydrogen-sonar" || upstreamModel === "MODEL_PLACEHOLDER_M578") {
+    const effort = typeof request.reasoning_effort === "string" ? request.reasoning_effort.trim().toLowerCase() : "";
+    let budget = effort === "high" ? 1024 : effort === "medium" ? 256 : 32;
+    const reqMax = Number(generationConfig.maxOutputTokens ?? 0);
+    if (reqMax >= 128) {
+      budget = Math.max(32, Math.min(budget, Math.floor(reqMax / 2)));
+    } else {
+      budget = 32;
+      generationConfig.maxOutputTokens = Math.max(128, 32 + Math.max(64, reqMax));
+    }
+    generationConfig.thinkingConfig = { thinkingBudget: budget };
+  }
+
   geminiPayload.generationConfig = generationConfig;
 
   const isStream = request.stream ?? false;

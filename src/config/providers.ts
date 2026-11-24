@@ -114,7 +114,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
       "gemini-3.8-flash-low",
       "gemini-3.8-flash-tiered",
       "gemini-3.8-flash",
-      "gemini-3.8-pro-high",
+      "gemini-4-hydrogen-sonar",
       "gemini-3.8-pro-low",
       "gemini-3.8-pro",
       "gemini-3.7-flash-high",
