@@ -1044,10 +1044,60 @@ adminRouter.post("/combos/test", async (c) => {
 // Antigravity OAuth config — C-2: credentials masked
 // ---------------------------------------------------------------------------
 adminRouter.get("/antigravity/status", async (c) => {
-  const { clientId, isConfigured } = await getAntigravityOAuthCredentials(c.env);
-  const creds = await getStoredProviderCredentials(c.env, "antigravity");
-  const hasTokens = creds && creds.length > 0;
-  return c.json({ ok: true, isConfigured, hasClientId: Boolean(clientId), maskedClientId: maskSecret(clientId), hasTokens });
+  const { listAntigravityAccounts } = await import("@/oauth/antigravity");
+  const [{ clientId, isConfigured }, accounts] = await Promise.all([
+    getAntigravityOAuthCredentials(c.env),
+    listAntigravityAccounts(c.env),
+  ]);
+  return c.json({
+    ok: true,
+    isConfigured,
+    hasClientId: Boolean(clientId),
+    maskedClientId: maskSecret(clientId),
+    hasTokens: accounts.length > 0,
+    accountCount: accounts.length,
+    accounts,
+  });
+});
+
+adminRouter.delete("/antigravity/accounts", async (c) => {
+  const { removeAntigravityAccounts } = await import("@/oauth/antigravity");
+  const body = (await c.req.json().catch(() => ({}))) as {
+    index?: number;
+    id?: string;
+    all?: boolean;
+  };
+  const qIndex = c.req.query("index");
+  const qId = c.req.query("id");
+  const qAll = c.req.query("all");
+
+  const index =
+    typeof body.index === "number"
+      ? body.index
+      : qIndex !== undefined && qIndex !== "" && !Number.isNaN(Number(qIndex))
+        ? Number(qIndex)
+        : undefined;
+  const id = body.id?.trim() || qId?.trim() || undefined;
+  const all = body.all === true || qAll === "1" || qAll === "true";
+
+  if (!all && index === undefined && !id) {
+    return c.json({ error: { message: "Informe id, index ou all=true", type: "validation" } }, 400);
+  }
+
+  const result = await removeAntigravityAccounts(c.env, { index, id, all });
+  if (!all && result.removed === 0) {
+    return c.json({ error: { message: "Conta Antigravity não encontrada", type: "not_found" } }, 404);
+  }
+
+  return c.json({
+    ok: true,
+    removed: result.removed,
+    accountCount: result.accounts.length,
+    accounts: result.accounts,
+    message: all
+      ? "Todas as contas Antigravity foram removidas."
+      : "Conta Antigravity removida com sucesso.",
+  });
 });
 
 adminRouter.post("/antigravity/config", async (c) => {

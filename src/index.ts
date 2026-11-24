@@ -12,8 +12,10 @@ import { handleAudioSpeech, handleAudioTranscriptions, handleAudioTranslations }
 import {
   discoverCompanionProject,
   exchangeAntigravityCode,
+  fetchGoogleUserEmail,
   getAntigravityAuthUrl,
   refreshAntigravityToken,
+  upsertAntigravityAccount,
 } from "./oauth/antigravity";
 import { ANTIGRAVITY_PUBLIC_CONFIG } from "./config/constants";
 import { executeMcpTool, handleMcpSse, MCP_TOOLS_LIST } from "./mcp/server";
@@ -28,7 +30,7 @@ import {
   isModelAllowed,
   recordVirtualKeyUse,
 } from "./admin/auth";
-import { getAdminConfig, getAntigravityOAuthCredentials, appendProviderCredentials } from "./admin/store";
+import { getAdminConfig, getAntigravityOAuthCredentials } from "./admin/store";
 import type { AnthropicMessagesRequest } from "./types/anthropic";
 import type { ChatCompletionRequest } from "./types/openai";
 import type { EnvBindings } from "./types/provider";
@@ -342,16 +344,16 @@ app.get("/api/oauth/antigravity/callback", async (c) => {
     const { clientId, clientSecret } = await getAntigravityOAuthCredentials(c.env);
     const tokens = await exchangeAntigravityCode(code, redirectUri, clientId, clientSecret);
     
-    // Suporte a Multi-Contas: Salvamos o refresh_token no pool padrão
-    const keyData = JSON.stringify({
-      refresh_token: tokens.refresh_token,
-      project_id: tokens.project_id || "",
+    // Suporte a Multi-Contas: Salvamos no pool sem duplicar refresh_token ou email
+    await upsertAntigravityAccount(c.env, {
+      refreshToken: tokens.refresh_token,
+      projectId: tokens.project_id || "",
+      email: tokens.email || "",
     });
-    await appendProviderCredentials(c.env, "antigravity", [{ apiKey: keyData }]);
 
     return c.html(`<html><body style="font-family:sans-serif;background:#0b0f19;color:#fff;padding:2rem;text-align:center">
       <h2 style="color:#10b981">✅ Conta Google Conectada com Sucesso!</h2>
-      <p style="color:#94a3b8;margin:1rem 0">Você pode adicionar múltiplas contas. Projeto GCP: <code>${tokens.project_id ?? "auto"}</code></p>
+      <p style="color:#94a3b8;margin:1rem 0">${tokens.email ? `Conta: <b>${tokens.email}</b> · ` : ""}Projeto GCP: <code>${tokens.project_id ?? "auto"}</code></p>
       <a href="/" style="color:#38bdf8">⬅ Voltar ao Dashboard</a>
     </body></html>`);
   } catch (err: unknown) {
@@ -374,10 +376,13 @@ app.post("/api/oauth/antigravity/import", async (c) => {
       const { clientId, clientSecret } = await getAntigravityOAuthCredentials(c.env);
       const tokens = await exchangeAntigravityCode(code, redirectUri, clientId, clientSecret);
       
-      const keyData = JSON.stringify({ refresh_token: tokens.refresh_token, project_id: tokens.project_id || "" });
-      await appendProviderCredentials(c.env, "antigravity", [{ apiKey: keyData }]);
+      await upsertAntigravityAccount(c.env, {
+        refreshToken: tokens.refresh_token,
+        projectId: tokens.project_id || "",
+        email: tokens.email || "",
+      });
 
-      return c.json({ ok: true, message: `Autenticado com sucesso! Projeto: ${tokens.project_id || "auto"}` });
+      return c.json({ ok: true, message: `Autenticado com sucesso!${tokens.email ? ` Conta: ${tokens.email} ·` : ""} Projeto: ${tokens.project_id || "auto"}` });
     } catch (err: unknown) {
       return c.json({ ok: false, error: `Falha na troca de código: ${err instanceof Error ? err.message : String(err)}` }, 400);
     }
@@ -385,12 +390,14 @@ app.post("/api/oauth/antigravity/import", async (c) => {
 
   let refreshToken = inputStr;
   let projectId = "";
+  let email = "";
 
   if (refreshToken.startsWith("{")) {
     try {
       const parsed = JSON.parse(refreshToken) as Record<string, string>;
       refreshToken = parsed.refresh_token || parsed.token || "";
       projectId = parsed.project_id || parsed.cloudaicompanionProject || "";
+      email = parsed.email || "";
     } catch { /* not JSON — use as-is */ }
   }
 
@@ -404,6 +411,9 @@ app.post("/api/oauth/antigravity/import", async (c) => {
     if (!projectId) {
       projectId = await discoverCompanionProject(renewed.access_token).catch(() => "");
     }
+    if (!email) {
+      email = await fetchGoogleUserEmail(renewed.access_token).catch(() => "");
+    }
     if (!projectId) {
       projectId = ANTIGRAVITY_PUBLIC_CONFIG.defaultProjectId;
     }
@@ -414,10 +424,9 @@ app.post("/api/oauth/antigravity/import", async (c) => {
     );
   }
 
-  const keyData = JSON.stringify({ refresh_token: refreshToken, project_id: projectId });
-  await appendProviderCredentials(c.env, "antigravity", [{ apiKey: keyData }]);
+  await upsertAntigravityAccount(c.env, { refreshToken, projectId, email });
   
-  return c.json({ ok: true, message: `Credenciais do Antigravity validadas e salvas no pool. Projeto: ${projectId}` });
+  return c.json({ ok: true, message: `Credenciais do Antigravity validadas e salvas no pool.${email ? ` Conta: ${email} ·` : ""} Projeto: ${projectId}` });
 });
 
 // ---------------------------------------------------------------------------

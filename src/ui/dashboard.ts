@@ -808,6 +808,21 @@ curl -X POST https://seu-worker.workers.dev/v1/search \\
           </div>
         </div>
 
+        <!-- Lista de Contas Conectadas -->
+        <div id="agy-accounts-section" style="padding: 1rem 1.25rem; border-radius: 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--card-border); margin-bottom: 1.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.75rem;">
+            <div style="font-size: 0.92rem; font-weight: 600;">
+              👥 Contas Google Conectadas <span id="agy-accounts-count" class="badge-edge" style="margin-left: 0.4rem;">0</span>
+            </div>
+            <button id="agy-clear-all-btn" type="button" class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.78rem; display: none; border-color: rgba(239,68,68,0.4); color: #fca5a5;" onclick="clearAllAntigravityAccounts()">
+              🗑️ Remover Todas
+            </button>
+          </div>
+          <div id="agy-accounts-list" style="display: flex; flex-direction: column; gap: 0.6rem; font-size: 0.84rem; color: var(--text-muted);">
+            Carregando contas...
+          </div>
+        </div>
+
         <!-- Passo a Passo Autorização -->
         <div style="background: rgba(56, 189, 248, 0.03); border: 1px solid rgba(56, 189, 248, 0.15); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.75rem;">
           <h4 style="font-size: 0.95rem; margin-bottom: 0.5rem; color: var(--primary);">⚙️ Como Autenticar (Headless OAuth)</h4>
@@ -3392,6 +3407,88 @@ git push origin master
       }
     }
 
+    function renderAntigravityAccounts(accounts) {
+      const listEl = document.getElementById('agy-accounts-list');
+      const countEl = document.getElementById('agy-accounts-count');
+      const clearBtn = document.getElementById('agy-clear-all-btn');
+      if (!listEl) return;
+
+      const items = Array.isArray(accounts) ? accounts : [];
+      if (countEl) countEl.innerText = String(items.length);
+      if (clearBtn) clearBtn.style.display = items.length > 0 ? 'inline-flex' : 'none';
+
+      if (items.length === 0) {
+        listEl.innerHTML = '<div style="padding: 0.75rem; border-radius: 8px; background: rgba(255,255,255,0.02); color: var(--text-muted);">Nenhuma conta conectada no momento. Use o passo a passo abaixo para conectar.</div>';
+        return;
+      }
+
+      listEl.innerHTML = items.map(function(acc, idx) {
+        const emailLabel = acc.email ? escapeHtml(acc.email) : ('Conta #' + (idx + 1) + ' (OAuth)');
+        const rawLabel = acc.email || ('Conta #' + (idx + 1));
+        const proj = escapeHtml(acc.projectId || 'aicode-consumers');
+        const tokenPrev = escapeHtml(acc.maskedToken || '****');
+        const safeId = escapeHtml(acc.id || '');
+        const safeIdx = Number.isInteger(acc.index) ? acc.index : idx;
+        return '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; padding:0.75rem 0.9rem; border-radius:10px; background:rgba(15,23,42,0.55); border:1px solid var(--card-border);">' +
+          '<div style="display:flex; flex-direction:column; gap:0.2rem;">' +
+            '<div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">' +
+              '<strong style="color:var(--text);">#' + (idx + 1) + ' · ' + emailLabel + '</strong>' +
+              '<span class="badge-edge" style="background:rgba(16,185,129,0.15); color:var(--emerald); border-color:rgba(16,185,129,0.3); font-size:0.7rem;">Ativa</span>' +
+            '</div>' +
+            '<div style="font-size:0.78rem; color:var(--text-muted); font-family:monospace;">Projeto: ' + proj + ' · Token: ' + tokenPrev + '</div>' +
+          '</div>' +
+          '<button type="button" class="btn btn-secondary" style="padding:0.35rem 0.75rem; font-size:0.78rem; border-color:rgba(239,68,68,0.45); color:#fca5a5;" data-agy-id="' + safeId + '" data-agy-index="' + safeIdx + '" data-agy-label="' + escapeHtml(rawLabel) + '" onclick="deleteAntigravityAccount(this)">🗑️ Excluir</button>' +
+        '</div>';
+      }).join('');
+    }
+
+    async function deleteAntigravityAccount(btn) {
+      const id = btn.getAttribute('data-agy-id') || '';
+      const indexAttr = btn.getAttribute('data-agy-index');
+      const index = indexAttr !== null && indexAttr !== '' ? Number(indexAttr) : undefined;
+      const label = btn.getAttribute('data-agy-label') || 'esta conta';
+      if (!confirm('Deseja realmente excluir a conta Antigravity "' + label + '" deste Worker?')) return;
+
+      try {
+        const res = await adminFetch('/api/admin/antigravity/accounts', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: id, index: index })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('Conta removida com sucesso!', 'success');
+          await loadAntigravityStatus();
+          if (typeof loadAdmin === 'function') loadAdmin();
+        } else {
+          showToast('Erro ao remover conta: ' + ((data.error && data.error.message) || JSON.stringify(data.error || data)), 'error');
+        }
+      } catch (e) {
+        showToast('Erro ao remover conta: ' + e.message, 'error');
+      }
+    }
+
+    async function clearAllAntigravityAccounts() {
+      if (!confirm('Deseja realmente excluir TODAS as contas Antigravity conectadas?')) return;
+      try {
+        const res = await adminFetch('/api/admin/antigravity/accounts', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ all: true })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('Todas as contas Antigravity foram removidas.', 'info');
+          await loadAntigravityStatus();
+          if (typeof loadAdmin === 'function') loadAdmin();
+        } else {
+          showToast('Erro ao limpar contas: ' + ((data.error && data.error.message) || JSON.stringify(data.error || data)), 'error');
+        }
+      } catch (e) {
+        showToast('Erro ao limpar contas: ' + e.message, 'error');
+      }
+    }
+
     async function loadAntigravityStatus() {
       const badge = document.getElementById('agy-badge-configured');
       const detail = document.getElementById('agy-detail-text');
@@ -3405,13 +3502,15 @@ git push origin master
       try {
         const res = await adminFetch('/api/admin/antigravity/status');
         const data = await res.json();
+        renderAntigravityAccounts(data.accounts || []);
+        const accCount = typeof data.accountCount === 'number' ? data.accountCount : ((data.accounts || []).length);
         if (data.isConfigured) {
           badge.innerText = 'Pronto para Uso';
           badge.style.background = 'rgba(16,185,129,0.15)';
           badge.style.color = 'var(--emerald)';
           badge.style.borderColor = 'rgba(16,185,129,0.3)';
           detail.innerHTML = 'Client ID ativo (' + escapeHtml(data.maskedClientId || 'embutido') + ')' +
-            (data.hasTokens ? ' · <strong style="color:var(--emerald);">Tokens Ativos no KV</strong>' : ' · <span style="color:var(--amber);">Aguardando Autorização</span>');
+            (data.hasTokens ? ' · <strong style="color:var(--emerald);">Tokens Ativos no KV (' + accCount + ' conta' + (accCount === 1 ? '' : 's') + ')</strong>' : ' · <span style="color:var(--amber);">Aguardando Autorização</span>');
         } else {
           badge.innerText = 'Credenciais Pendentes';
           badge.style.background = 'rgba(245,158,11,0.15)';
@@ -3421,6 +3520,7 @@ git push origin master
         }
       } catch (e) {
         if (badge) badge.innerText = 'Erro ao verificar';
+        renderAntigravityAccounts([]);
       }
     }
 

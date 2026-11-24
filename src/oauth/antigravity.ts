@@ -1,5 +1,10 @@
 import { ANTIGRAVITY_PUBLIC_CONFIG } from "@/config/constants";
-import { getAntigravityOAuthCredentials } from "@/admin/store";
+import { maskSecret } from "@/admin/auth";
+import {
+  getAntigravityOAuthCredentials,
+  getStoredProviderCredentials,
+  setStoredProviderCredentials,
+} from "@/admin/store";
 import type { EnvBindings } from "@/types/provider";
 
 export interface AntigravityTokens {
@@ -82,14 +87,68 @@ export async function exchangeAntigravityCode(
     expires_at: Date.now() + (data.expires_in || 3600) * 1000 - 60000, // 1 min buffer
   };
 
-  // Tenta descobrir o projeto GCP companion onboarded
-  try {
-    tokens.project_id = await discoverCompanionProject(tokens.access_token);
-  } catch (err) {
-    console.warn("Aviso: Falha ao autodescobrir projeto GCP Companion:", err);
-  }
+  // Tenta descobrir o projeto GCP companion onboarded e o e-mail da conta Google
+  const [proj, email] = await Promise.all([
+    discoverCompanionProject(tokens.access_token).catch(() => ""),
+    fetchGoogleUserEmail(tokens.access_token).catch(() => ""),
+  ]);
+  tokens.project_id = proj;
+  if (email) tokens.email = email;
 
   return tokens;
+}
+
+/**
+ * Busca o e-mail da conta Google autenticada via OAuth userinfo.
+ */
+export async function fetchGoogleUserEmail(accessToken: string): Promise<string> {
+  if (!accessToken) return "";
+  try {
+    const res = await fetch(ANTIGRAVITY_PUBLIC_CONFIG.userInfoUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: typeof AbortSignal !== "undefined" && "timeout" in AbortSignal ? AbortSignal.timeout(4000) : undefined,
+    });
+    if (!res.ok) return "";
+    const u = (await res.json()) as { email?: string };
+    return typeof u?.email === "string" ? u.email.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+export interface ParsedAntigravityCredential {
+  refreshToken: string;
+  projectId: string;
+  email: string;
+  connectedAt: string;
+}
+
+export function parseAntigravityCredential(rawApiKey: string): ParsedAntigravityCredential {
+  let refreshToken = (rawApiKey || "").trim();
+  let projectId = "";
+  let email = "";
+  let connectedAt = "";
+  if (refreshToken.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(refreshToken) as Record<string, unknown>;
+      refreshToken = String(parsed.refresh_token || parsed.token || "").trim();
+      projectId = String(parsed.project_id || parsed.cloudaicompanionProject || "").trim();
+      email = String(parsed.email || "").trim();
+      connectedAt = String(parsed.connected_at || "").trim();
+    } catch { /* mantém string bruta legada */ }
+  }
+  return { refreshToken, projectId, email, connectedAt };
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const data = new TextEncoder().encode(input);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export async function antigravityAccessCacheKey(refreshToken: string): Promise<string> {
+  const hex = await sha256Hex(refreshToken);
+  return `agy_access_${hex.substring(0, 16)}`;
 }
 
 /**
@@ -224,13 +283,7 @@ export async function getValidAntigravityAccessToken(
 
   // Tenta recuperar o Access Token renovado no cache para este Refresh Token (evitar throttling do Google)
   if (env.OMNI_CACHE && refreshToken) {
-    // Hasheia o refresh token para a chave do cache
-    const encoder = new TextEncoder();
-    const data = encoder.encode(refreshToken);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
-    const cacheKey = `agy_access_${hashHex.substring(0, 16)}`;
+    const cacheKey = await antigravityAccessCacheKey(refreshToken);
 
     const cached = await env.OMNI_CACHE.get(cacheKey);
     if (cached) {
@@ -254,4 +307,150 @@ export async function getValidAntigravityAccessToken(
     projectId = await discoverCompanionProject(renewed.access_token).catch(() => "");
   }
   return { accessToken: renewed.access_token, projectId };
+}
+
+export interface AntigravityAccountSummary {
+  index: number;
+  id: string;
+  email: string;
+  projectId: string;
+  maskedToken: string;
+  connectedAt: string;
+}
+
+/**
+ * Salva ou atualiza uma conta OAuth do Antigravity no pool sem duplicar refresh_token ou email.
+ */
+export async function upsertAntigravityAccount(
+  env: EnvBindings,
+  input: { refreshToken: string; projectId?: string; email?: string }
+): Promise<void> {
+  const existing = await getStoredProviderCredentials(env, "antigravity");
+  const normEmail = (input.email || "").trim().toLowerCase();
+  const payload = JSON.stringify({
+    refresh_token: input.refreshToken.trim(),
+    project_id: (input.projectId || "").trim(),
+    email: (input.email || "").trim(),
+    connected_at: new Date().toISOString(),
+  });
+
+  let replaced = false;
+  const updated = existing.map((item) => {
+    const parsed = parseAntigravityCredential(item.apiKey);
+    const sameToken = parsed.refreshToken && parsed.refreshToken === input.refreshToken.trim();
+    const sameEmail = normEmail && parsed.email && parsed.email.toLowerCase() === normEmail;
+    if (!replaced && (sameToken || sameEmail)) {
+      replaced = true;
+      return { apiKey: payload };
+    }
+    return item;
+  });
+  if (!replaced) updated.push({ apiKey: payload });
+  await setStoredProviderCredentials(env, "antigravity", updated);
+}
+
+/**
+ * Lista todas as contas Antigravity conectadas (mascaradas, sem expor refresh_token).
+ * Backfill best-effort de e-mail para contas legadas salvas sem o campo email.
+ */
+export async function listAntigravityAccounts(env: EnvBindings): Promise<AntigravityAccountSummary[]> {
+  const creds = await getStoredProviderCredentials(env, "antigravity");
+  if (creds.length === 0) return [];
+
+  let dirty = false;
+  const updatedCreds = [...creds];
+  const summaries: AntigravityAccountSummary[] = [];
+
+  for (let i = 0; i < creds.length; i++) {
+    const parsed = parseAntigravityCredential(creds[i].apiKey);
+    let email = parsed.email;
+    const projectId = parsed.projectId || ANTIGRAVITY_PUBLIC_CONFIG.defaultProjectId;
+
+    if (!email && parsed.refreshToken) {
+      try {
+        const tok = await getValidAntigravityAccessToken(env, { apiKey: creds[i].apiKey });
+        const resolved = await fetchGoogleUserEmail(tok.accessToken);
+        if (resolved) {
+          email = resolved;
+          updatedCreds[i] = {
+            apiKey: JSON.stringify({
+              refresh_token: parsed.refreshToken,
+              project_id: parsed.projectId || tok.projectId || "",
+              email: resolved,
+              connected_at: parsed.connectedAt || new Date().toISOString(),
+            }),
+          };
+          dirty = true;
+        }
+      } catch { /* ignora erro de backfill para não bloquear listagem */ }
+    }
+
+    const id = parsed.refreshToken ? (await sha256Hex(parsed.refreshToken)).substring(0, 12) : `idx_${i}`;
+    summaries.push({
+      index: i,
+      id,
+      email,
+      projectId,
+      maskedToken: parsed.refreshToken ? maskSecret(parsed.refreshToken) : "****",
+      connectedAt: parsed.connectedAt,
+    });
+  }
+
+  if (dirty) {
+    await setStoredProviderCredentials(env, "antigravity", updatedCreds).catch(() => {});
+  }
+
+  return summaries;
+}
+
+/**
+ * Remove uma conta específica (por id ou index) ou todas as contas Antigravity do KV.
+ */
+export async function removeAntigravityAccounts(
+  env: EnvBindings,
+  target: { index?: number; id?: string; all?: boolean }
+): Promise<{ removed: number; accounts: AntigravityAccountSummary[] }> {
+  const creds = await getStoredProviderCredentials(env, "antigravity");
+  if (creds.length === 0) return { removed: 0, accounts: [] };
+
+  const toDeleteTokens: string[] = [];
+  let remaining = creds;
+
+  if (target.all) {
+    for (const c of creds) {
+      const p = parseAntigravityCredential(c.apiKey);
+      if (p.refreshToken) toDeleteTokens.push(p.refreshToken);
+    }
+    remaining = [];
+  } else {
+    const kept: typeof creds = [];
+    for (let i = 0; i < creds.length; i++) {
+      const p = parseAntigravityCredential(creds[i].apiKey);
+      const cid = p.refreshToken ? (await sha256Hex(p.refreshToken)).substring(0, 12) : `idx_${i}`;
+      const matchById = typeof target.id === "string" && target.id.trim() !== "" && cid === target.id.trim();
+      const matchByIndex = typeof target.index === "number" && Number.isInteger(target.index) && i === target.index;
+      if (matchById || matchByIndex) {
+        if (p.refreshToken) toDeleteTokens.push(p.refreshToken);
+      } else {
+        kept.push(creds[i]);
+      }
+    }
+    remaining = kept;
+  }
+
+  const removed = creds.length - remaining.length;
+  if (removed > 0) {
+    await setStoredProviderCredentials(env, "antigravity", remaining);
+    if (env.OMNI_CACHE) {
+      await Promise.all(
+        toDeleteTokens.map(async (rt) => {
+          const ck = await antigravityAccessCacheKey(rt);
+          await env.OMNI_CACHE!.delete(ck).catch(() => {});
+        })
+      );
+    }
+  }
+
+  const accounts = await listAntigravityAccounts(env);
+  return { removed, accounts };
 }
