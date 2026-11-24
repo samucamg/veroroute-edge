@@ -53,12 +53,18 @@ export const STATIC_PROVIDER_CATALOGS: Record<string, string[]> = {
   antigravity: [
     // Catálogo de fallback quando o upstream (fetchAvailableModels) não responde.
     // Atualizado com base no catálogo real do Cloud Code Assist.
+    "gemini-4-hydrogen-high",
+    "gemini-4-hydrogen-medium",
+    "gemini-4-hydrogen-low",
+    "gemini-4-hydrogen-xhigh",
+    "gemini-4-hydrogen-tiered-high",
+    "gemini-4-hydrogen-tiered-xhigh",
+    "gemini-4-hydrogen-sonar",
     "gemini-3.8-flash-high",
     "gemini-3.8-flash-medium",
     "gemini-3.8-flash-low",
     "gemini-3.8-flash-tiered",
     "gemini-3.8-flash",
-    "gemini-4-hydrogen-sonar",
     "gemini-3.8-pro-low",
     "gemini-3.8-pro",
     "gemini-3.7-flash-high",
@@ -229,6 +235,46 @@ const MODEL_METADATA: Record<string, Partial<ModelEntry>> = {
   "gemini-2.5-pro": {
     pricing: { input_per_million: 1.25, output_per_million: 5.0, free_tier: true },
     context_length: 2097152,
+    capabilities: { streaming: true, tools: true, vision: true },
+  },
+  "gemini-4-hydrogen": {
+    pricing: { input_per_million: 0, output_per_million: 0, free_tier: true },
+    context_length: 1048576,
+    capabilities: { streaming: true, tools: true, vision: true },
+  },
+  "gemini-4-hydrogen-low": {
+    pricing: { input_per_million: 0, output_per_million: 0, free_tier: true },
+    context_length: 1048576,
+    capabilities: { streaming: true, tools: true, vision: true },
+  },
+  "gemini-4-hydrogen-medium": {
+    pricing: { input_per_million: 0, output_per_million: 0, free_tier: true },
+    context_length: 1048576,
+    capabilities: { streaming: true, tools: true, vision: true },
+  },
+  "gemini-4-hydrogen-high": {
+    pricing: { input_per_million: 0, output_per_million: 0, free_tier: true },
+    context_length: 1048576,
+    capabilities: { streaming: true, tools: true, vision: true },
+  },
+  "gemini-4-hydrogen-xhigh": {
+    pricing: { input_per_million: 0, output_per_million: 0, free_tier: true },
+    context_length: 1048576,
+    capabilities: { streaming: true, tools: true, vision: true },
+  },
+  "gemini-4-hydrogen-tiered-high": {
+    pricing: { input_per_million: 0, output_per_million: 0, free_tier: true },
+    context_length: 1048576,
+    capabilities: { streaming: true, tools: true, vision: true },
+  },
+  "gemini-4-hydrogen-tiered-xhigh": {
+    pricing: { input_per_million: 0, output_per_million: 0, free_tier: true },
+    context_length: 1048576,
+    capabilities: { streaming: true, tools: true, vision: true },
+  },
+  "gemini-4-hydrogen-sonar": {
+    pricing: { input_per_million: 0, output_per_million: 0, free_tier: true },
+    context_length: 1048576,
     capabilities: { streaming: true, tools: true, vision: true },
   },
 };

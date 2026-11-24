@@ -35,7 +35,7 @@ export const ANTIGRAVITY_PUBLIC_CONFIG = {
   generateContentPath: "/v1internal:generateContent",
   streamGenerateContentPath: "/v1internal:streamGenerateContent?alt=sse",
   userAgent:
-    "antigravity/cli/1.1.26 (aidev_client; os_type=linux; arch=amd64; cl=976013059; auth_method=consumer)",
+    "antigravity/hub/2.35.0 (aidev_client; os_type=windows; arch=amd64; cl=1028447422)",
   /**
    * Projeto consumer usado pelo CLI oficial e pelo Account Switcher quando o
    * onboarding não devolve um companion project (não é um id secreto/da conta).
@@ -143,6 +143,46 @@ export const DEFAULT_MODELS_CATALOG = [
   },
 
   // --- Antigravity CLI / Google Cloud Code Assist (OAuth) ---
+  {
+    id: "antigravity/gemini-4-hydrogen-low",
+    owned_by: "google-code-assist",
+    provider: "antigravity",
+    pricing: { input_per_million: 0, output_per_million: 0, free_tier: true },
+    context_length: 1048576,
+    max_output_tokens: 262144,
+  },
+  {
+    id: "antigravity/gemini-4-hydrogen-medium",
+    owned_by: "google-code-assist",
+    provider: "antigravity",
+    pricing: { input_per_million: 0, output_per_million: 0, free_tier: true },
+    context_length: 1048576,
+    max_output_tokens: 262144,
+  },
+  {
+    id: "antigravity/gemini-4-hydrogen-high",
+    owned_by: "google-code-assist",
+    provider: "antigravity",
+    pricing: { input_per_million: 0, output_per_million: 0, free_tier: true },
+    context_length: 1048576,
+    max_output_tokens: 262144,
+  },
+  {
+    id: "antigravity/gemini-4-hydrogen-xhigh",
+    owned_by: "google-code-assist",
+    provider: "antigravity",
+    pricing: { input_per_million: 0, output_per_million: 0, free_tier: true },
+    context_length: 1048576,
+    max_output_tokens: 262144,
+  },
+  {
+    id: "antigravity/gemini-4-hydrogen-sonar",
+    owned_by: "google-code-assist",
+    provider: "antigravity",
+    pricing: { input_per_million: 0, output_per_million: 0, free_tier: true },
+    context_length: 1048576,
+    max_output_tokens: 65536,
+  },
   {
     id: "antigravity/gemini-2.5-pro",
     owned_by: "google-code-assist",

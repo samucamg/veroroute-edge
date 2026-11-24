@@ -437,6 +437,8 @@ export async function executeDirectProviderTest(
     model.startsWith("gemma-") ||
     model.includes("sonar") ||
     model.includes("thinking") ||
+    model.includes("hydrogen") ||
+    model.includes("gemini-4") ||
     model.includes("3.8");
 
   const testMaxTokens = needsHigherTestBudget ? 128 : 64;
@@ -479,7 +481,7 @@ export async function executeDirectProviderTest(
     } else if (providerId === "antigravity") {
       const { getValidAntigravityAccessToken } = await import("@/oauth/antigravity");
       const { executeAntigravityRequest } = await import("@/adapters/antigravity");
-      const antigravResult = await getValidAntigravityAccessToken(env);
+      const antigravResult = await getValidAntigravityAccessToken(env, apiKey ? { apiKey } : undefined);
       if (!antigravResult?.accessToken) {
         return {
           provider: providerId,
@@ -646,7 +648,10 @@ adminRouter.post("/providers/:id/test-models", async (c) => {
 
   const effectiveBaseUrl = body.baseUrl?.trim() || cfg.providerBaseUrls?.[id] || (id === "azure" ? c.env.AZURE_OPENAI_ENDPOINT : undefined) || prov?.baseUrl;
 
-  const providerTestTimeoutMs = id === "antigravity" || id === "nvidia" || id === "cheaperinference" ? 30000 : 12000;
+  const providerTestTimeoutMs =
+    id === "antigravity" || id === "gemini" || id === "nvidia" || id === "cheaperinference"
+      ? 30000
+      : 12000;
   const results: Awaited<ReturnType<typeof executeDirectProviderTest>>[] = [];
   // Chaves limitadas ficam indisponiveis para os modelos seguintes deste mesmo teste.
   let usableCredentials = providerCredentials;
@@ -657,11 +662,21 @@ adminRouter.post("/providers/:id/test-models", async (c) => {
     for (let keyIndex = 0; keyIndex < Math.max(usableCredentials.length, 1); keyIndex++) {
       const currentKey = usableCredentials[keyIndex]?.apiKey || apiKey;
       result = await executeDirectProviderTest(c.env, id, currentKey, model, providerTestTimeoutMs, effectiveBaseUrl);
-      if (result.status !== 429) break;
-      limitedKey = currentKey;
-      if (currentKey) await markKeyRateLimited(c.env, currentKey, 60);
+      const isTransientRetryable =
+        result.status === 429 ||
+        result.status === 500 ||
+        result.status === 502 ||
+        result.status === 503 ||
+        result.status === 504;
+      const shouldTryNextKey = isTransientRetryable || result.status === 403;
+      if (!shouldTryNextKey) break;
+      if (result.status === 429) {
+        limitedKey = currentKey;
+        if (currentKey) await markKeyRateLimited(c.env, currentKey, 60);
+      }
       if (keyIndex + 1 < usableCredentials.length) continue;
-      // Uma repeticao curta separa fila cheia transitoria de cota realmente esgotada.
+      if (!isTransientRetryable) break;
+      // Uma repeticao curta separa fila cheia / sobrecarga transitoria de cota ou indisponibilidade real.
       await new Promise((resolve) => setTimeout(resolve, id === "pollinations" ? 2500 : 1000));
       result = await executeDirectProviderTest(c.env, id, currentKey, model, providerTestTimeoutMs, effectiveBaseUrl);
     }
