@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/images/logo-veroroute-edge-icon.png" alt="VeroRoute Edge Logo" width="160" />
+
 # ⚡ VeroRoute Edge
 
 ### Aerodynamic Serverless AI Gateway & Smart Router for Cloudflare Workers
